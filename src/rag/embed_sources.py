@@ -14,7 +14,6 @@ import yaml
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from langchain_openai import OpenAIEmbeddings
 
 load_dotenv()
 
@@ -77,7 +76,7 @@ def main() -> None:
 
     store = Chroma(
         collection_name=COLLECTION,
-        embedding_function=OpenAIEmbeddings(), #By default, Chroma uses all-MiniLM-L6-v2 embeddings locally
+        # No embedding_function: Chroma falls back to its local default, all-MiniLM-L6-v2.
         persist_directory=CHROMA_DIR,
     )
     store.reset_collection()  # rebuild from scratch so removed docs don't linger

@@ -10,7 +10,7 @@
 - Model: `gpt-5.4-nano` for both the agent and the LLM judge (user decision, D-011). The name lives in `.env` as `OPENAI_MODEL` (never hard-coded); read it once in a small config module.
   The shared model means self-preference bias is a documented limitation; mitigate with judge calibration
   against human labels and by keeping deterministic checks primary.
-- Embeddings: `OPENAI_EMBEDDING_MODEL` from `.env` (text-embedding-3-small, D-013), with a simple local vector store (in-memory or Chroma/FAISS); keep it swappable.
+- Embeddings: Chroma's local default all-MiniLM-L6-v2, no embedding_function passed (D-019), with a simple local vector store (in-memory or Chroma/FAISS); keep it swappable.
 
 ## Intended shape
 ```
@@ -27,7 +27,7 @@ request(order_id, email/gift code, message, today) -> verify identity tool -> lo
   order records and expected values from code.
 
 ## Phases
-1. Scaffolding: pyproject, .env.example, loader/indexer with the leak-guard test, mock data schema.
+1. Scaffolding: requirements.txt, .env.example, loader/indexer, mock data schema.
 2. Agent v1 (no metadata filtering) + tracing.
 3. Dataset: normal / edge / failure / adversarial cases; slices from GROUND_TRUTH section 5.
 4. Evaluators: deterministic (decision, amount, window/date, escalation, disclosure/PII regex, cited gold docs,

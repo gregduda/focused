@@ -76,7 +76,25 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
 - Chroma DB lives in `chroma_db/` (gitignored). Added `chromadb` and `langchain-chroma` to requirements.txt; installed on 3.14 without issues. Project venv is `.venv/` (gitignored).
 
 ## D-016 Chunk visualization script
-- Code: `src/rag/visualize_chunks.py` (`python -m src.rag.visualize_chunks`) writes `viz/chunks.html` (gitignored, `VIZ_DIR` in `.env`). Reads stored vectors from Chroma, so no embedding API calls.
+- Code: `src/rag/plot_chunks.py` (`python -m src.rag.plot_chunks`) writes `viz/chunks.html` (gitignored, `CHROMA_CHUNK_PLOT_DIR` in `.env`). Reads stored vectors from Chroma, so no embedding API calls.
 - Projection: t-SNE with cosine distance, fixed seed (sklearn, no extra install risk on 3.14; UMAP skipped because its numba dependency is a risk). Dropdown recolors by authority, status, doc_type, category, or state; hover shows doc, section, preview.
 - Limits: 2D projections distort distances. This is an exploration aid for the README/interview, not an eval.
 - Added numpy, scikit-learn, plotly to requirements.txt.
+
+## D-017 No code-level guard or test for the answer key (supersedes the guard in D-001/D-015)
+- Decision: `GROUND_TRUTH.md` lives outside `refund_policies/`, the only directory the indexer reads. The assert in `embed_sources.py` was removed and no leak-guard test will be written.
+- Why: user decision; the separation is structural. The indexer only reads `POLICY_DOCS_DIR`, so the file can't be indexed unless someone moves it in there.
+- Residual risk: pointing `POLICY_DOCS_DIR` at the repo root, or moving the file into `refund_policies/`, would silently index it. Also, the index still has to be rebuilt after any corpus edit.
+
+## D-018 Retriever added; embedding model is the langchain default (supersedes D-013)
+- Code: `src/rag/chunk_retriever.py` (`retrieve(query, k=RETRIEVER_TOP_K)`, no metadata filtering, returns chunks best-first with a `distance`), `tests/rag/chunk_retriever_test.py` (`pytest tests/rag -s` prints the retrieved chunks), `pytest.ini` (`pythonpath = .`). `RETRIEVER_TOP_K=4` in `.env`.
+- The user changed `embed_sources.py` to `OpenAIEmbeddings()` with no model and removed `OPENAI_EMBEDDING_MODEL` from `.env`. langchain's default is `text-embedding-ada-002`. The index and the retriever must use the same model.
+- Incident: I re-added `text-embedding-3-small` to the retriever/.env without noticing the change. Index and queries were in different vector spaces (cosine ~0.07 between a chunk and its own re-embedded text), so retrieval returned near-random chunks (distances ~1.8-1.9). Fixed by making the retriever use `OpenAIEmbeddings()` too. Lesson: a model mismatch fails silently, with no error. Any change to the embedding model means re-running `python -m src.rag.embed_sources`.
+- Risk: the model is now implicit. If langchain changes its default, index and queries would drift apart again. An explicit env var shared by both files would be safer.
+- First v1 retrieval observations (real failures for the before/after story): "How long do I have to return a bookshelf?" ranks SUP-02 (stale, says furniture 60 days), POL-01, ARC-01, SUP-01 and does not retrieve CAT-04 in the top 4. "Holiday return deadline for electronics" ranks ARC-02 (unapproved draft, Feb 15) first. "website says love it or send it back anytime" retrieves MKT-01 first.
+
+## D-019 Local embeddings: Chroma default all-MiniLM-L6-v2 (supersedes D-013 and D-018)
+- Decision (user): no `embedding_function` is passed in `embed_sources.py` or `chunk_retriever.py`, so Chroma uses its built-in local all-MiniLM-L6-v2 (384 dimensions, ONNX, downloaded once to `~/.cache/chroma`, about 79 MB). No `OPENAI_EMBEDDING_MODEL` in `.env`.
+- Benefits: no API cost or latency for embedding, tests run offline after the first download, nothing implicit in langchain's defaults. Chroma applies the same function at index and query time, which removes the mismatch failure from D-018 as long as neither file passes its own function.
+- Costs: MiniLM is smaller than OpenAI embeddings and truncates input at about 256 word pieces (our chunks are short, so this is fine). The first run needs internet for the model download. Distances are on a different scale than before (`dist` up to ~1.3), so do not compare distance numbers across models.
+- Index rebuilt: 244 chunks, 51 docs. Retrieval quality is reasonable: California restocking returns ST-CA first; distractors still appear (bookshelf returns SUP-02, SUP-01, ARC-01, POL-01 and misses CAT-04 entirely; holiday electronics ranks the ARC-02 draft first; doorbuster query pulls ARC-02 4th). These are the v1 failures to measure.

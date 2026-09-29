@@ -12,8 +12,8 @@ The user will be interviewed on every design decision, so explain reasoning and 
 
 ## Hard rules (never violate)
 1. `GROUND_TRUTH.md` is the answer key. Never index, embed, retrieve, or show it to the agent or the LLM judge.
-   It stays at the repo root, outside `refund_policies/`. A test must fail if it (or anything outside the
-   corpus dir) lands in the index. Do not paste its worked examples into prompts or few-shots (eval contamination).
+   It stays outside `refund_policies/` (the only indexed dir), so no code-level check or test for it is needed
+   (user decision, D-017). Never move it into that folder. Do not paste its worked examples into prompts or few-shots (eval contamination).
 2. The agent takes `today` (a date) as an explicit input on every run. Never call the system clock inside
    agent code. Evals pass the date per case.
 3. Orders and customers come from mock data with the fields in `refund_policies/README.md`. Every dollar

@@ -1,7 +1,7 @@
 """Plot the indexed policy chunks in 2D so you can see how they cluster.
 
-Run from the repo root:  python -m src.rag.visualize_chunks
-Writes VIZ_DIR/chunks.html. Open it in a browser; use the dropdown to color by a metadata field
+Run from the repo root:  python -m src.rag.plot_chunks
+Writes CHROMA_CHUNK_PLOT_DIR/chunks.html. Open it in a browser; use the dropdown to color by a metadata field
 and hover a point to see the doc and section.
 
 Reads the vectors already stored in Chroma (no embedding API calls). Uses t-SNE with cosine distance.
@@ -21,7 +21,7 @@ load_dotenv()
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CHROMA_DIR = str(REPO_ROOT / os.environ["CHROMA_DIR"])
 COLLECTION = os.environ["CHROMA_COLLECTION"]
-OUT_FILE = REPO_ROOT / os.environ["VIZ_DIR"] / "chunks.html"
+OUT_FILE = REPO_ROOT / os.environ["CHROMA_CHUNK_PLOT_DIR"] / "chunks.html"
 
 COLOR_FIELDS = ["authority", "status", "doc_type", "category", "state"]
 UNSET = "(none)"  # category and state exist only on some docs
