@@ -36,3 +36,8 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
 - Abuse flag (OPS-03) escalates even when the item is clearly ineligible. Reason: OPS-03 says escalate "instead of approving or denying"; a human decides.
 - The $250 limit applies to the net refund (after fees, before any store-credit bonus). The $500 jewelry rule uses price paid, as CAT-06 says.
 - Never disclose the $250, $500, or abuse thresholds. Windows, fees, and the $15 keep-it limit (customer-facing POL-11) may be stated.
+
+## D-009 OpenAI as the LLM provider
+- Decision: agent, judge, and embeddings use OpenAI via `langchain-openai`; model names come from env/config.
+- Why: user's available key. LangGraph/LangSmith are provider-agnostic, so nothing else changes.
+- Judge uses a different model than the agent to reduce self-preference bias.
