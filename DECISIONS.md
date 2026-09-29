@@ -41,3 +41,8 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
 - Decision: agent, judge, and embeddings use OpenAI via `langchain-openai`; model names come from env/config.
 - Why: user's available key. LangGraph/LangSmith are provider-agnostic, so nothing else changes.
 - Judge uses a different model than the agent to reduce self-preference bias.
+
+## D-010 Python 3.14 with requirements.txt
+- Decision: use the system Python 3.14 and a `requirements.txt` (no pyproject.toml), per user preference.
+- Checked: langchain 1.4.3, langgraph, langchain-openai, langsmith 0.14.1 install and import on 3.14 (one DeprecationWarning only).
+- Risk: some transitive dependency (e.g. a vector store) may lack 3.14 wheels; pin versions in requirements.txt once chosen and fall back to 3.12 if one breaks.

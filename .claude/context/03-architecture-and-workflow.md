@@ -1,8 +1,9 @@
 # Architecture and workflow (planned; nothing here is built yet)
 
 ## Stack (defaults, tell the user before departing)
-- Python. System default is 3.14 and only 3.12 is otherwise installed; prefer 3.12 (or 3.13) for
-  LangChain/LangGraph compatibility. `uv` is not installed; plain venv + pip/pyproject is fine.
+- Python 3.14 (system default, user's choice, D-010) in a plain venv. Dependencies in `requirements.txt`
+  (no pyproject.toml). Verified langchain, langgraph, langchain-openai, langsmith import cleanly on 3.14
+  (only a DeprecationWarning from langsmith). `uv` is not installed.
 - LangGraph for the agent; LangChain for retriever/model abstractions; LangSmith for tracing + datasets + evals
   (`langsmith` evaluate()). Deep Agents is likely overkill for one task; only add it if the user wants it.
 - LLM provider is OpenAI (user decision, D-009). Use `langchain-openai`. Keys `OPENAI_API_KEY` and `LANGSMITH_API_KEY` are in `.env` (gitignored; `env.example` has empty placeholders). Never print or commit key values.
