@@ -150,3 +150,13 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
 - Why: it served one rule (POL-09 free gift deducted if not returned) and one answer-key case (B20). Not worth a field and extra model logic.
 - Consequence: the POL-09 free-gift rule joins the untested rules (with spend-threshold and proration). List them in the README limitations. Answer-key case B20 is dropped; D-024's "Kept: B20" no longer holds.
 - Kept: `estimated_delivery_date` (POL-11 lost-package rule) and `outbound_shipping_paid` (POL-08/POL-14 shipping refunds).
+
+## D-028 LangSmith tracing on; four parameterized calculator tools
+- Tracing: `LANGSMITH_TRACING=true` and `LANGSMITH_PROJECT=refund-agent` in `.env` and `env.example`. Verified: a traced call showed up as a root run in the `refund-agent` project. Nodes that are plain Python (order load, retriever) still need `@traceable` to appear as spans.
+- Calculators (`src/tools/calculators.py`, tests in `tests/tools`), plain functions plus `CALCULATOR_TOOLS`:
+  1. `compute_deadline(start, windows, today)`: takes every candidate window (days from start, or a fixed date), applies the LATEST (windows never stack, POL-07), and says whether today is on or before it (inclusive), with days remaining. Also serves other clocks, such as the 7-day damage report or the 90-day keep-it rule.
+  2. `compute_refund(price_paid, tax, restocking_pct, label_fee, pickup_fee, outbound_shipping_refund, store_credit_bonus_pct)`: POL-08 formula with a fee breakdown. The LLM decides which fees apply and passes 0 for waived or inapplicable ones.
+  3. `check_claim_window(start_date, today, wait_business_days, max_calendar_days)`: lost-package rule (POL-11). Business days are Monday to Friday with no holiday calendar.
+  4. `check_elapsed_hours(start, now, limit_hours)`: the 48-hour rules; returns both `within_limit` (report within 48h) and `limit_reached` (wait 48h first).
+- Design points: dates in as ISO strings; money in as numbers, computed as Decimal, out as two-decimal strings; percentage fees and the store-credit bonus round half up (the bonus rounding is our assumption, the corpus is silent); the tools raise ValueError on bad input and do not floor a negative refund, they flag `refund_is_negative`. None of them contains policy numbers.
+- Not built: threshold checks ($250 limit, $500 jewelry, $15 keep-it, abuse counts). These depend on the open decision about where authority checks live. A `check_limit(amount, limit, inclusive)` tool is the obvious fifth calculator if we keep them in the LLM step.
