@@ -7,8 +7,9 @@
 - LangGraph for the agent; LangChain for retriever/model abstractions; LangSmith for tracing + datasets + evals
   (`langsmith` evaluate()). Deep Agents is likely overkill for one task; only add it if the user wants it.
 - LLM provider is OpenAI (user decision, D-009). Use `langchain-openai`. Keys `OPENAI_API_KEY` and `LANGSMITH_API_KEY` are in `.env` (gitignored; `env.example` has empty placeholders). Never print or commit key values.
-- Use a different OpenAI model for the judge than for the agent to limit self-preference bias. Model names are
-  config (env vars), not hard-coded; ask the user which models their key can use before choosing.
+- Model: `gpt-5.4-nano` for both the agent and the LLM judge (user decision, D-011). Names stay in config/env.
+  The shared model means self-preference bias is a documented limitation; mitigate with judge calibration
+  against human labels and by keeping deterministic checks primary.
 - Embeddings: OpenAI embeddings with a simple local vector store (in-memory or Chroma/FAISS); keep it swappable.
 
 ## Intended shape

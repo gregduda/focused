@@ -46,3 +46,9 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
 - Decision: use the system Python 3.14 and a `requirements.txt` (no pyproject.toml), per user preference.
 - Checked: langchain 1.4.3, langgraph, langchain-openai, langsmith 0.14.1 install and import on 3.14 (one DeprecationWarning only).
 - Risk: some transitive dependency (e.g. a vector store) may lack 3.14 wheels; pin versions in requirements.txt once chosen and fall back to 3.12 if one breaks.
+
+## D-011 gpt-5.4-nano for both agent and judge
+- Decision: one model, `gpt-5.4-nano`, for the agent and the LLM judge (user choice). Model name is config, so it can change per role later.
+- Cost: the judge shares the agent's blind spots and may favor its own style (self-preference bias); a nano-size judge is also weaker at subtle judgments.
+- Mitigations: deterministic checks decide decision/amount/date/escalation/disclosure; the judge only grades tone and invented-policy; calibrate the judge against a small hand-labeled set and report agreement; state this limitation in the README.
+- Embedding model not chosen yet.
