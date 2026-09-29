@@ -98,3 +98,16 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
 - Benefits: no API cost or latency for embedding, tests run offline after the first download, nothing implicit in langchain's defaults. Chroma applies the same function at index and query time, which removes the mismatch failure from D-018 as long as neither file passes its own function.
 - Costs: MiniLM is smaller than OpenAI embeddings and truncates input at about 256 word pieces (our chunks are short, so this is fine). The first run needs internet for the model download. Distances are on a different scale than before (`dist` up to ~1.3), so do not compare distance numbers across models.
 - Index rebuilt: 244 chunks, 51 docs. Retrieval quality is reasonable: California restocking returns ST-CA first; distractors still appear (bookshelf returns SUP-02, SUP-01, ARC-01, POL-01 and misses CAT-04 entirely; holiday electronics ranks the ARC-02 draft first; doorbuster query pulls ARC-02 4th). These are the v1 failures to measure.
+
+## D-020 No identity verification step (user decision; revises D-005)
+- Decision: the agent takes `order_id`, the customer message, and `today`. It loads the order by id with no email or gift-code check and no `failed_verification_attempts` input. OPS-02's verification rules and the OPS-01 "identity cannot be verified" escalation are out of scope.
+- Why: extra complexity that does not serve the assignment's evaluation story.
+- Consequences: (1) eval case G4 (wrong email twice) is dropped; (2) POL-12 gift-recipient flow needs no code check, just the `is_gift_order` fact on the order; (3) the agent will act on any order id it is given, which must be stated in the README as a limitation (a production agent needs authentication upstream); (4) OPS-02's PII rules still apply to messages: never repeat a pasted card number, mask emails, do not repeat the full address (case G5 stays).
+- The "don't reveal whether an order exists" behavior is not needed, since there is no pre-verification state.
+
+## D-021 Calculators and actions are LLM tool calls; order load and retrieval are fixed steps
+- Decision (user-confirmed): the LLM gets a small set of deterministic calculators (return deadline, fees, refund amount) and action tools (create RMA, keep-it refund, cancel order, exchange, escalate) via standard LangChain/LangGraph tool calling. Loading the order and retrieving policy chunks are fixed steps before the LLM, not tools.
+- Calculators are parameterized: the LLM reads values (window days, fee percentages) from the retrieved docs and passes them as arguments. They contain no policy. Retrieval quality therefore affects the answer, which is what the evals measure.
+- Why: arithmetic and dates stay in code (hard rule 3), every call is visible in the LangSmith trace, and retrieval stays load-bearing.
+- Risks: the LLM may skip a calculator or pass the wrong argument (for example 45 days instead of 30). This is testable with tool-call/trajectory evals. Keep the tool set small.
+- Alternative not taken: hard-coding the policy in the calculators. More accurate, but retrieval becomes decorative and the eval loses its main lever.

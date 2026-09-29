@@ -8,7 +8,7 @@
    gift-card balance, existing keep-it history. Need a mock-data schema decision.
 3. Hour-level rules (perishables 48h, delivered-not-received 48h, "30 hours after delivery") vs a date-only
    `today` input. Either add a `now` timestamp input or restrict those cases to dates.
-4. RESOLVED (D-005): single-turn with a `failed_verification_attempts` input. Was: multi-turn behavior: OPS-02 "two failed verification attempts" needs state across turns. Single-turn with an
+4. RESOLVED (D-005, revised by D-020): single-turn; identity verification was dropped so there is no attempts input. Was: multi-turn behavior: OPS-02 "two failed verification attempts" needs state across turns. Single-turn with an
    attempts counter input, or a real conversation loop?
 5. RESOLVED (D-006): keep three labels; anything that isn't approve/deny maps to ESCALATE. Was: only three decision labels exist, but some correct behaviors are neither: ask a clarifying question (OPS-05),
    "wait 48 hours" (E7 before the wait), and pre-verification refusals. Add a fourth label or map to ESCALATE?

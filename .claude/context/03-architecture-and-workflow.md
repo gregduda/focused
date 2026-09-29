@@ -14,13 +14,13 @@
 
 ## Intended shape
 ```
-request(order_id, email/gift code, message, today) -> verify identity tool -> load order/customer tool
+request(order_id, message, today) -> load order/customer tool
    -> retrieve policy chunks (RAG) -> deterministic calc tools -> decision + customer message
    -> action tools (create_rma, keep_it_refund, cancel_order, open_escalation, warranty_ticket)
 ```
 - Structured output: `decision` in {APPROVE, DENY, ESCALATE}, `refund_amount`, `reason_code`, `cited_doc_ids`,
   `customer_message`.
-- Key design question (raise with user before building): calc tools should take parameters the LLM read from
+- DECIDED (D-021): calc tools should take parameters the LLM read from
   retrieved docs (window_days, fee %) rather than hard-code policy, or RAG becomes decorative and the eval
   stops measuring retrieval. Date/money arithmetic itself is always deterministic code.
 - Mock data: JSON/py fixtures for orders + customers with the README fields. Dataset builder generates
