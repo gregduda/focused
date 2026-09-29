@@ -160,3 +160,16 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
   4. `check_elapsed_hours(start, now, limit_hours)`: the 48-hour rules; returns both `within_limit` (report within 48h) and `limit_reached` (wait 48h first).
 - Design points: dates in as ISO strings; money in as numbers, computed as Decimal, out as two-decimal strings; percentage fees and the store-credit bonus round half up (the bonus rounding is our assumption, the corpus is silent); the tools raise ValueError on bad input and do not floor a negative refund, they flag `refund_is_negative`. None of them contains policy numbers.
 - Not built: threshold checks ($250 limit, $500 jewelry, $15 keep-it, abuse counts). These depend on the open decision about where authority checks live. A `check_limit(amount, limit, inclusive)` tool is the obvious fifth calculator if we keep them in the LLM step.
+
+## D-029 Agent state and structured result (`src/agent/state.py`)
+- State is a `TypedDict` (LangGraph's standard): `request`, `order`, `customer`, `chunks`, `messages` (LLM and tool conversation, with LangGraph's message reducer), `result`. Nodes return only the keys they change. The store is not in the state (not serializable); nodes and tools receive it through the graph config.
+- Retrieved chunks are kept as a small flat `RetrievedChunk` (doc_id, section, status, authority, distance, text) so traces and evals (gold-doc recall, stale-doc-retrieved) can read them directly.
+- Result = `AgentDecision` (the schema given to the LLM) + `actions` (copied from the store by code when the run ends, so evals can check what was done). `AgentDecision` fields: decision, reason_code (nine of OPS-05's ten codes, without GIFT_UNWANTED; or null), stated_condition (sealed_unopened, opened_unused, assembled, used_or_worn, not_stated), refund_amount, refund_method, escalation_type, cited_doc_ids, rationale (internal, not shown to the customer), customer_message.
+- The LLM states reason_code and stated_condition so evals can check that it read the message correctly (they come from the message, not the database).
+- `refund_amount` is a two-decimal STRING, not Decimal. Pydantic's Decimal JSON schema contains a regex pattern; with `gpt-5.4-nano` structured output it ran until the output limit ("max_tokens or model output limit was reached"). With `str` it works. A `refund_decimal` property converts for comparisons. Lesson: test a schema against the real model before building on it.
+- No cross-field validators on the LLM schema (for example "ESCALATE needs an escalation_type"): a failing validator would crash the run instead of showing up as an eval failure. These invariants become deterministic eval checks. Also to check: refund_amount equals a value the calculators actually returned (amount provenance).
+- Open follow-up: calculators take `today` as an argument, so the LLM must copy today's date into each call. Injecting it from the state would remove that failure mode; decide when building the graph.
+
+## D-030 Removed GIFT_UNWANTED from the reason codes
+- It was in `ReasonCode` only because OPS-05 lists ten codes. Gifts are out of scope (D-023), so it gave the model an unused option. A message about an unwanted gift maps to CHANGED_MIND, which has the same fees.
+- Easy to restore: one line in `src/agent/state.py`.
