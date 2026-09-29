@@ -17,7 +17,7 @@
 - Loyalty tier = tier at time of purchase. Fall Gear-Up and Holiday key off ORDER date.
   Florida keys off DELIVERY date. Window clock starts at delivery; day 0 = delivery; last day inclusive.
 - Precedence: eligibility gates -> deadline -> fees/waivers -> refund amount -> escalation check (POL-07).
-- Agent authority: refund total <= $250, keep-it <= $75, etc. (OPS-01). Thresholds are internal and must
+- Agent authority: refund total <= $250, keep-it <= $15 (changed from the corpus original of $75, see D-007), etc. (OPS-01). Thresholds are internal and must
   not be disclosed to customers (OPS-01/OPS-06). Goodwill exceptions are human-only (OPS-06).
 - Ship-to state (CA NY WA IL MA FL TX) and item category change fees/windows/final-sale enforceability.
 
