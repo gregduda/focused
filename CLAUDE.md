@@ -29,6 +29,8 @@ The user will be interviewed on every design decision, so explain reasoning and 
 - Simple over clever. Fewer moving parts. Tell the user if there is a strong reason to depart from
   LangChain/LangGraph/LangSmith.
 - Log every meaningful design decision in `DECISIONS.md` (date, decision, alternatives, why).
-- Commit in small steps with clear messages. Follow the attribution reminder from the harness.
+- NEVER run git add/commit/push, and do not suggest commit groupings or messages. The user handles all git.
+- `requirements.txt` is pinned (`==`). Whenever code imports a new third-party library, install it in the venv and
+  add it to `requirements.txt` in the same change, with the installed version. Don't leave it stale.
 - Flag ambiguities instead of silently working around them; put them in `04-open-questions.md`.
 - Report failures honestly, including bad eval numbers. Perfect scores are not the goal.

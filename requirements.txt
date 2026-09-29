@@ -1,0 +1,16 @@
+# Agent and tracing
+langchain==1.4.3
+langchain-openai==1.6.6
+langgraph==1.2.12
+langsmith==0.14.1
+
+# Vector store
+chromadb==1.5.9
+langchain-chroma==1.1.0
+
+# Config and corpus loading
+python-dotenv==1.2.3
+PyYAML==6.0.3
+
+# Tests
+pytest==9.1.1

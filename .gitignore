@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local vector store (rebuild with: python -m src.rag.embed_sources)
+chroma_db/

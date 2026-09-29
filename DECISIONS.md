@@ -56,3 +56,21 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
 ## D-012 Model name comes from `.env` (`OPENAI_MODEL`)
 - Decision: a single `OPENAI_MODEL` entry (value `gpt-5.4-nano`) in `.env` and `env.example`; code never hard-codes a model name.
 - One variable serves both agent and judge for now. If we later want a different judge, add `JUDGE_MODEL` that falls back to `OPENAI_MODEL`.
+
+## D-013 Embedding model: text-embedding-3-small (default pick)
+- Decision: `OPENAI_EMBEDDING_MODEL=text-embedding-3-small` in `.env` and `env.example`. Verified with a live call (1536 dimensions).
+- Why: cheap, widely used, plenty for ~51 short docs. Retrieval quality is not the thing we are tuning; the v1-to-v2 change is metadata filtering.
+- Note: changing the embedding model requires rebuilding the index.
+
+## D-014 Pinned requirements.txt, kept current
+- Decision: `requirements.txt` with exact versions (langchain, langchain-openai, langgraph, langsmith, python-dotenv, PyYAML, pytest), taken from a working install on Python 3.14. Updated whenever a new library is imported.
+- Why: reproducible quickstart for reviewers. No vector store added yet; it will be added when we choose one.
+
+## D-015 Indexing: chunk by `##` section into a local Chroma DB
+- Code: `src/rag/embed_sources.py` (run `python -m src.rag.embed_sources` from the repo root). Config in `.env`: `POLICY_DOCS_DIR`, `CHROMA_DIR`, `CHROMA_COLLECTION` (plus the embedding model).
+- Chunking: one chunk per `##` section, prefixed with "Title (DOC-ID)". Text between the H1 and the first `##` becomes an "Overview" chunk (needed: e.g. CAT-04's definition of oversized lives there). Result: 244 chunks from 51 docs.
+- Metadata stored per chunk: doc_id, title, doc_type, status, authority, category, state, section, source path. v1 ignores them at query time; v2 will filter on them.
+- Rebuild from scratch on every run (`reset_collection`), ids `DOC-ID::n`, so removed or edited docs never linger.
+- Leak guard: only `POLICY_DOCS_DIR` is read, the corpus README is skipped, and the script asserts no GROUND_TRUTH file is in the list. A proper pytest for this is still to be written.
+- Smoke check: "restocking fee for opened electronics shipped to California" returns ST-CA, CAT-02, POL-06, then SUP-01 (a non-authoritative macro), so the distractor problem shows up even in v1 retrieval.
+- Chroma DB lives in `chroma_db/` (gitignored). Added `chromadb` and `langchain-chroma` to requirements.txt; installed on 3.14 without issues. Project venv is `.venv/` (gitignored).
