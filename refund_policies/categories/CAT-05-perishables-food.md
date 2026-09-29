@@ -16,8 +16,8 @@ Food and other perishable items cannot be returned. This includes changes of min
 ## Claims for spoiled, damaged, or wrong items
 If a perishable item arrives spoiled, damaged, or not as ordered, the customer must report it within **48 hours of the delivery date**. The remedy is a replacement or a refund, at the customer's choice, with no return of the item required.
 
-- Claims of **$75 or less** are handled by the agent as keep-it refunds (POL-11), limited to one per customer per 90 days.
-- Claims over $75 are escalated to a human.
+- Claims of **$15 or less** are handled by the agent as keep-it refunds (POL-11), limited to one per customer per 90 days.
+- Claims over $15 are escalated to a human.
 
 ## Safety
 If a customer reports an allergic reaction, illness, or injury connected to a food item, escalate immediately as a safety incident (OPS-01). Do not discuss fault or offer medical advice.

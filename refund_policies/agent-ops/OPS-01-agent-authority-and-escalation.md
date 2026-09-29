@@ -14,7 +14,7 @@ audience: support agents, including the AI support agent
 - Look up an order after identity is verified (OPS-02).
 - Approve an eligible return and create an RMA when the refund total is **$250 or less**.
 - Issue a refund once the return is marked received and inspected.
-- Issue keep-it refunds of $75 or less (POL-11).
+- Issue keep-it refunds of $15 or less (POL-11).
 - Offer exchanges and the store-credit option.
 - Cancel orders with status `processing` (POL-14).
 - Open a warranty ticket (POL-10).
@@ -29,7 +29,7 @@ audience: support agents, including the AI support agent
 ## Escalate instead of approving
 - The refund total for the case is **more than $250**.
 - A single jewelry item has a price paid of **$500 or more** (CAT-06).
-- A damage, defect, or missing-item claim is worth **more than $75** (POL-11).
+- A damage, defect, or missing-item claim is worth **more than $15** (POL-11).
 - Any furniture damage claim (CAT-04).
 
 ## Always escalate

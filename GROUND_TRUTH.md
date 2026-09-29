@@ -47,7 +47,7 @@ Our-error reasons: `DEFECTIVE`, `DAMAGED_IN_TRANSIT`, `WRONG_ITEM_SENT`, `NOT_AS
 |---|---|---|
 | Agent approval limit | Refund total of $250 or less; more than $250 escalates | OPS-01 |
 | Jewelry escalation | Single item price paid of $500 or more | CAT-06 |
-| Keep-it refund | Damaged, defective, wrong, or missing item of $75 or less, once per customer per 90 days | POL-11 |
+| Keep-it refund | Damaged, defective, wrong, or missing item of $15 or less, once per customer per 90 days | POL-11 |
 | Damage report deadline | 7 days from delivery (48 hours for perishables) | POL-11, CAT-05 |
 | Abuse escalation | 4 or more returns, or $1,000 or more refunded, in the last 60 days | OPS-03 |
 | RMA validity | 14 days | POL-01 |
@@ -151,10 +151,10 @@ All are in-window, `CHANGED_MIND`, Texas, Basic, unless noted.
 
 | ID | Today | Scenario | Expected | Gold docs |
 |---|---|---|---|---|
-| E1 | Sep 29 | Mug $28.00, tax $2.24, arrived broken, reported on day 3, no keep-it refund in 90 days. | APPROVE keep-it refund of $30.24, no return, no fees. | POL-11 |
-| E2 | Sep 29 | Lamp $110 arrived broken. | ESCALATE. Over $75. | POL-11, OPS-01 |
+| E1 | Sep 29 | Mug $28.00, tax $2.24, arrived broken, reported on day 3, no keep-it refund in 90 days. | ESCALATE. Price paid $28.00 is over the $15 keep-it limit. (Use a mug priced $12.00, tax $0.96, for the APPROVE path: keep-it refund $12.96.) | POL-11 |
+| E2 | Sep 29 | Lamp $110 arrived broken. | ESCALATE. Over $15. | POL-11, OPS-01 |
 | E3 | Sep 29 | Second keep-it request within 90 days. | ESCALATE | POL-11, OPS-03 |
-| E4 | Sep 29 | Perishable basket $45.00, tax $3.60, spoiled, reported 30 hours after delivery. | APPROVE keep-it refund of $48.60. At 60 hours: DENY. At $120 within 48 hours: ESCALATE. | CAT-05, POL-11 |
+| E4 | Sep 29 | Perishable basket $12.00, tax $0.96, spoiled, reported 30 hours after delivery. | APPROVE keep-it refund of $12.96. At 60 hours: DENY. At $45 within 48 hours: ESCALATE (over $15). | CAT-05, POL-11 |
 | E5 | Sep 29 | Customer reports an allergic reaction to a food item. | ESCALATE as a safety incident. No fault discussion. | CAT-05, OPS-01 |
 | E6 | Sep 29 | Package estimated Fri Sep 18, not delivered. $90 order. | APPROVE reshipment or full refund including shipping (5 business days passed on Sep 25). If the estimate was Fri Sep 25, it is too early until Oct 2. | POL-11 |
 | E7 | Sep 29 | Tracking says delivered Sep 26, customer says not received. | ESCALATE after the 48-hour wait. The agent does not refund on its own. | POL-11, OPS-01 |
@@ -206,7 +206,7 @@ All are in-window, `CHANGED_MIND`, Texas, Basic, unless noted.
 | When does a refund reach my card? | Initiated within 3 business days of inspection, then 5 to 10 business days | POL-04 |
 | Are opened in-ear earbuds returnable? | No, unless defective | CAT-03, CAT-02 |
 | Which state has a 37-day window? | Florida, for deliveries June 1 to November 30 | ST-FL |
-| What is the keep-it refund limit? | $75, once per 90 days | POL-11 |
+| What is the keep-it refund limit? | $15, once per 90 days | POL-11 |
 | How long is a return authorization valid? | 14 days | POL-01, POL-02 |
 | What is the most the agent can approve? | $250 (internal) | OPS-01 |
 
@@ -225,7 +225,7 @@ All are in-window, `CHANGED_MIND`, Texas, Basic, unless noted.
 
 **Assumptions the documents make**
 - For multi-item orders, each item is evaluated on its own. The $250 limit applies to the sum of the refunds for the case.
-- "$250 or less" and "$75 or less" are inclusive. "More than" is exclusive.
+- "$250 or less" and "$15 or less" are inclusive. "More than" is exclusive.
 - Business days are Monday to Friday with no holiday calendar.
 - Tax is an input from the order record, not something the agent calculates.
 - Outbound shipping is refunded only when the whole order is returned for our-error reasons, or when an order is cancelled before it ships.
