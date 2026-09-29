@@ -6,7 +6,7 @@
    promo/threshold math), promo code details, free-gift value, estimated delivery date (POL-11), delivery-scan
    timestamp, damage/claim report time, item opened/sealed/worn condition, oversized attributes, engraving detail,
    gift-card balance, existing keep-it history. Need a mock-data schema decision.
-3. Hour-level rules (perishables 48h, delivered-not-received 48h, "30 hours after delivery") vs a date-only
+3. RESOLVED (D-024): add `now` and `delivered_at` timestamps for those cases. Was: hour-level rules (perishables 48h, delivered-not-received 48h, "30 hours after delivery") vs a date-only
    `today` input. Either add a `now` timestamp input or restrict those cases to dates.
 4. RESOLVED (D-005, revised by D-020): single-turn; identity verification was dropped so there is no attempts input. Was: multi-turn behavior: OPS-02 "two failed verification attempts" needs state across turns. Single-turn with an
    attempts counter input, or a real conversation loop?
@@ -16,7 +16,7 @@
 ## Policy conflicts and gaps
 6. RESOLVED (D-008): abuse flag escalates even if ineligible. Was: precedence of the abuse flag (OPS-03: escalate "instead of approving or denying") vs a clearly ineligible item
    (OPS-01 "clear denials" need no escalation). Likewise jewelry >= $500 that is outside its window.
-7. RESOLVED (D-008): net refund, bonus excluded; mixed multi-item still open. Was: "Refund total > $250": net of fees or gross? Does the 5% store-credit bonus count? Mixed multi-item cases
+7. RESOLVED (D-008, D-024): net refund, bonus excluded; multi-item dropped so mixed cases do not arise. Was: "Refund total > $250": net of fees or gross? Does the 5% store-credit bonus count? Mixed multi-item cases
    (one item approvable, one not) have no rule. GT assumes items are evaluated separately, limit on the sum.
 8. RESOLVED (D-008): never disclose $250, $500, abuse thresholds. Was: which thresholds are "internal" (never disclose)? OPS-01 hides $250/$500/abuse thresholds, but the answer key's
    retrieval Q "most the agent can approve?" expects $250. Retrieval eval may pass while the end-to-end agent

@@ -102,7 +102,7 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
 ## D-020 No identity verification step (user decision; revises D-005)
 - Decision: the agent takes `order_id`, the customer message, and `today`. It loads the order by id with no email or gift-code check and no `failed_verification_attempts` input. OPS-02's verification rules and the OPS-01 "identity cannot be verified" escalation are out of scope.
 - Why: extra complexity that does not serve the assignment's evaluation story.
-- Consequences: (1) eval case G4 (wrong email twice) is dropped; (2) POL-12 gift-recipient flow needs no code check, just the `is_gift_order` fact on the order; (3) the agent will act on any order id it is given, which must be stated in the README as a limitation (a production agent needs authentication upstream); (4) OPS-02's PII rules still apply to messages: never repeat a pasted card number, mask emails, do not repeat the full address (case G5 stays).
+- Consequences: (1) eval case G4 (wrong email twice) is dropped; (2) see D-023 for gift orders; (3) the agent will act on any order id it is given, which must be stated in the README as a limitation (a production agent needs authentication upstream); (4) OPS-02's PII rules still apply to messages: never repeat a pasted card number, mask emails, do not repeat the full address (case G5 stays).
 - The "don't reveal whether an order exists" behavior is not needed, since there is no pre-verification state.
 
 ## D-021 Calculators and actions are LLM tool calls; order load and retrieval are fixed steps
@@ -111,3 +111,42 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
 - Why: arithmetic and dates stay in code (hard rule 3), every call is visible in the LangSmith trace, and retrieval stays load-bearing.
 - Risks: the LLM may skip a calculator or pass the wrong argument (for example 45 days instead of 30). This is testable with tool-call/trajectory evals. Keep the tool set small.
 - Alternative not taken: hard-coding the policy in the calculators. More accurate, but retrieval becomes decorative and the eval loses its main lever.
+
+## D-022 SQLite read-only order database; actions in memory (user decision)
+- Decision: mock orders and customers live in a SQLite file (`orders.db`; tables `customers`, `orders`, `items`) opened read-only. The file is created from `schema.sql` and `seed.sql`; there is no Python build script or second copy of the data (user pointed this out). The oracle reads the rows and computes expected values. Agent actions are recorded in an in-memory list per run and are never persisted.
+- Why (user): a database is easier to reason about than JSON files. SQLite needs no server and ships with Python.
+- Conventions: money in integer cents, dates as ISO text, booleans 0/1.
+- Tradeoff: eval cases refer to orders by id, so seed rows and case entries must be kept consistent, and dates are absolute (computed by hand from each case's `today`, then verified by a check script). Alternative rejected: per-case order records embedded in the dataset.
+- Supersedes the "in-memory store seeded from JSON" idea in `design/mock-data.md`.
+
+## D-023 Gift returns are out of scope (user decision)
+- Decision: no gift-recipient vs buyer distinction. No `is_gift_order`, `gift_receipt_code`, or `requester_role` fields; no gift-return eval cases (GT B21, F1); the agent has no gift-return logic.
+- Why: with identity verification removed (D-020) the agent cannot tell who is asking, and the user does not want the extra rules and examples.
+- Not affected: the POL-09 "free gift with purchase" rule (a promotion, unrelated to gift orders) and gift cards (CAT-08).
+- Corpus left as is: POL-12 stays in `refund_policies/` and in the index, so a gift-related question can still retrieve it, and POL-04 and OPS-02 still mention gift returns. If a gift question shows up, the agent should not apply POL-12 as if it were in scope; decide in the dataset whether that is a case at all. Removing or editing POL-12 in the corpus was not requested.
+
+## D-024 Timestamps for 48-hour rules, single-item orders, unknown order id escalates (user decisions)
+- Timestamps: `AgentRequest.now` (optional datetime) and `Order.delivered_at` (optional datetime), used only by perishables (CAT-05) and delivered-not-received (POL-11) cases. `today` is still always passed; the loader checks that `now.date() == today` and `delivered_at.date() == delivered_date`, so the two cannot disagree. Still no system clock in the agent.
+- Single-item orders: each order has exactly one item. Removed `promo` and `list_price` from the schema. The `items` table stays for later extension.
+- Dropped answer-key cases: B17, B18, B19 (need two items). Kept: B20 (free gift), B15 (whole-order shipping refund, trivially true for one item), C14 (a set is one item).
+- Unknown order id: `get_order` returns `None`; the agent ESCALATEs saying the order could not be found (fits D-006).
+- Consequence for the README: multi-item orders, promo proration, and spend-threshold rules (POL-09) are listed as untested.
+
+## D-025 Mock data implemented
+- Files: `data/schema.sql`, `data/seed.sql` (4 customers, 11 demo orders, one item each), `src/data/models.py` (Pydantic), `src/data/store.py` (read-only `OrderStore` with in-memory `actions`), `tests/data/store_test.py`. `ORDERS_DB_PATH=data/orders.db` in `.env`; the generated `data/orders.db` is gitignored.
+- Create the database: `sqlite3 data/orders.db < data/schema.sql && sqlite3 data/orders.db < data/seed.sql` (schema.sql drops and recreates the tables, so rerunning is safe).
+- Enforced by the schema and models: exactly one item per order, delivered orders have a delivered date and others do not, tiers and categories limited to the allowed values, `delivered_at` on `delivered_date`, `now` on `today`.
+- The 11 seed orders are demo scenarios written for this project, not copies of answer-key rows. Eval-case orders will be added to `seed.sql` when the dataset is built.
+- Added pydantic to requirements.txt.
+
+## D-026 Date-times for order and delivery; money stored as floats (user decisions; revises D-024 and D-025)
+- `order_date` and `delivered_date` are now ISO date-times (naive, read as US Pacific per POL-02). The separate `delivered_at` column and its consistency check were removed. The 48-hour rules use `delivered_date` and the request's `now`. Window logic counts calendar days from `delivered_date.date()`.
+- Money columns are REAL dollars (120.00, 9.60, 8.54), not integer cents. To avoid float error, `OrderStore` rounds each value to two decimals and converts it to `Decimal`; models and calculators only see `Decimal`.
+- Risk: floats in the database can carry representation error (for example 0.1 + 0.2). Rounding at read time removes it as long as amounts have at most two decimals, which the seed data respects. Never do arithmetic on the raw database values.
+- `estimated_delivery_date` and `last_keep_it_refund_date` stay date-only. The database was rebuilt and all tests pass.
+
+## D-027 Dropped `free_gift_value` from orders (user decision)
+- Removed from the schema, seed, models, store, and design doc. Added `first_name` and `last_name` to customers (for greeting the customer).
+- Why: it served one rule (POL-09 free gift deducted if not returned) and one answer-key case (B20). Not worth a field and extra model logic.
+- Consequence: the POL-09 free-gift rule joins the untested rules (with spend-threshold and proration). List them in the README limitations. Answer-key case B20 is dropped; D-024's "Kept: B20" no longer holds.
+- Kept: `estimated_delivery_date` (POL-11 lost-package rule) and `outbound_shipping_paid` (POL-08/POL-14 shipping refunds).
