@@ -74,3 +74,9 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
 - Leak guard: only `POLICY_DOCS_DIR` is read, the corpus README is skipped, and the script asserts no GROUND_TRUTH file is in the list. A proper pytest for this is still to be written.
 - Smoke check: "restocking fee for opened electronics shipped to California" returns ST-CA, CAT-02, POL-06, then SUP-01 (a non-authoritative macro), so the distractor problem shows up even in v1 retrieval.
 - Chroma DB lives in `chroma_db/` (gitignored). Added `chromadb` and `langchain-chroma` to requirements.txt; installed on 3.14 without issues. Project venv is `.venv/` (gitignored).
+
+## D-016 Chunk visualization script
+- Code: `src/rag/visualize_chunks.py` (`python -m src.rag.visualize_chunks`) writes `viz/chunks.html` (gitignored, `VIZ_DIR` in `.env`). Reads stored vectors from Chroma, so no embedding API calls.
+- Projection: t-SNE with cosine distance, fixed seed (sklearn, no extra install risk on 3.14; UMAP skipped because its numba dependency is a risk). Dropdown recolors by authority, status, doc_type, category, or state; hover shows doc, section, preview.
+- Limits: 2D projections distort distances. This is an exploration aid for the README/interview, not an eval.
+- Added numpy, scikit-learn, plotly to requirements.txt.

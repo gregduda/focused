@@ -8,6 +8,11 @@ langsmith==0.14.1
 chromadb==1.5.9
 langchain-chroma==1.1.0
 
+# Chunk visualization
+numpy==2.5.3
+scikit-learn==1.9.1
+plotly==7.1.0
+
 # Config and corpus loading
 python-dotenv==1.2.3
 PyYAML==6.0.3

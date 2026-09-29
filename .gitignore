@@ -219,3 +219,4 @@ __marimo__/
 
 # Local vector store (rebuild with: python -m src.rag.embed_sources)
 chroma_db/
+viz/
