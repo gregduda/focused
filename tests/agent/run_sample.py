@@ -7,6 +7,7 @@ From the repo root:
     python -m tests.agent.run_sample --order JP-1001 --message "The jacket doesn't fit, I want a refund" --today 2026-09-29
 """
 import argparse
+import asyncio
 import time
 from datetime import date, datetime
 
@@ -39,6 +40,15 @@ SAMPLES = {
 }
 
 
+def trace_url(run) -> str:
+    """The LangSmith link for a finished run. The run object does not carry the project id, so look it up."""
+    client = Client()
+    project_id = str(client.read_project(project_name=run.session_name).id)
+    link = asyncio.run(client.runs.get_url(
+        str(run.id), project_id=project_id, trace_id=str(run.trace_id), start_time=run.start_time.isoformat()))
+    return link.url
+
+
 def run_one(order_id: str, message: str, today: str, now: str | None) -> None:
     request = AgentRequest(order_id=order_id, message=message, today=date.fromisoformat(today),
                            now=datetime.fromisoformat(now) if now else None)
@@ -52,7 +62,7 @@ def run_one(order_id: str, message: str, today: str, now: str | None) -> None:
     wait_for_all_tracers()
     time.sleep(2)  # let LangSmith finish ingesting before asking for the link
     try:
-        print(f"trace:    {Client().read_run(runs.traced_runs[0].id).url}")
+        print(f"trace:    {trace_url(runs.traced_runs[0])}")
     except Exception as error:  # a missing link should not hide the result
         print(f"trace:    (link unavailable: {error})")
 
