@@ -252,3 +252,7 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
 - Why: the corpus describes approved outcomes that had no action to record: a lost or missing package is reshipped or refunded (POL-11), a defective item is refunded or replaced (POL-10), a custom item with a production error is remade or refunded (CAT-07). Without them the model had a correct APPROVE and no valid `approved_action`, so `record_approval` recorded nothing.
 - Added to `Action.type` and to `approved_action` (with guidance on when each applies in the field description). Both carry the item id and no refund amount. The diagram and the mock-data doc list them.
 - The other cause of an APPROVE with no recorded action remains (the model leaves the optional field empty), by design (D-029); the evals check for it.
+
+## D-042 Sample runner: `python -m tests.agent.run_sample`
+- Runs one request (`--order`, `--message`, `--today`, optional `--now`) or one or all of 11 named samples (`--sample NAME|all`, `--list`) and prints the decision, actions, cited documents, reply, and a link to the LangSmith trace. Samples use the demo orders in `data/seed.sql`; they are for eyeballing traces, not evals.
+- First run (`cancel`, order JP-1007, status `processing`): the agent did not cancel. It asked the customer whether the order had shipped, cited CAT-04 and ST-WA, and the message-only query did not retrieve POL-14 (cancellations). It also ignored the order's own `status` field. Another v1 retrieval failure to turn into a dataset case.
