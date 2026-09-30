@@ -168,8 +168,87 @@ Newest entries at the bottom. Format: what we decided, alternatives, why.
 - The LLM states reason_code and stated_condition so evals can check that it read the message correctly (they come from the message, not the database).
 - `refund_amount` is a two-decimal STRING, not Decimal. Pydantic's Decimal JSON schema contains a regex pattern; with `gpt-5.4-nano` structured output it ran until the output limit ("max_tokens or model output limit was reached"). With `str` it works. A `refund_decimal` property converts for comparisons. Lesson: test a schema against the real model before building on it.
 - No cross-field validators on the LLM schema (for example "ESCALATE needs an escalation_type"): a failing validator would crash the run instead of showing up as an eval failure. These invariants become deterministic eval checks. Also to check: refund_amount equals a value the calculators actually returned (amount provenance).
-- Open follow-up: calculators take `today` as an argument, so the LLM must copy today's date into each call. Injecting it from the state would remove that failure mode; decide when building the graph.
+- Calculators take `today` (and `now`) as arguments, so the LLM copies the date into each call (decided in D-031).
 
 ## D-030 Removed GIFT_UNWANTED from the reason codes
 - It was in `ReasonCode` only because OPS-05 lists ten codes. Gifts are out of scope (D-023), so it gave the model an unused option. A message about an unwanted gift maps to CHANGED_MIND, which has the same fees.
 - Easy to restore: one line in `src/agent/state.py`.
+
+## D-031 The model fills in `today` and `now` in calculator calls (user decision)
+- Alternative rejected: inject them from the graph state so the model never sees them. That would remove the chance of a wrong date, but adds wrapper code and hides the date from the trace.
+- Consequence: a wrong or hallucinated date in a tool call is a possible failure. Add a deterministic eval check that every calculator call used the request's `today` (and `now`), and count violations per run. This is a good candidate for a trajectory eval and for the interview.
+
+## D-032 Agent graph built (v1)
+- Files: `src/agent/graph.py` (wiring and `run_agent`), `nodes.py`, `tools.py` (five action tools plus the calculators as `ALL_TOOLS`), `prompts.py`, `state.py`; tests in `tests/agent/graph_test.py`.
+- Flow: `load_order` -> (order missing: `order_not_found` -> END) or `retrieve` -> `agent` <-> `tools` -> `finalize` -> END. A step limit of 20 guards against a runaway tool loop.
+- Unknown order id: handled in code (no LLM call): records an `open_escalation` action with type `order_not_found` and a fixed message.
+- Retrieval (v1): query is the customer message alone, top k from `RETRIEVER_TOP_K` (4), no metadata filtering. The retriever call is wrapped with `@traceable(run_type="retriever")` so the chunks show up as their own step in LangSmith.
+- Prompt: behavior rules only (sources of truth, untrusted message, calculator discipline, one action tool per decision, reply style). It contains no policy text, so retrieval failures cannot be hidden by the prompt. The chunks are shown to the model as `[DOC-ID | section]` plus text, without status or authority (a model that could see them could filter stale docs itself, which is the v2 change).
+- The customer's email and last name are not shown to the model; the first name is, for the greeting.
+- Action tools validate that the order and item exist, record an `Action` in the store's in-memory list, and move no money. `finalize` makes a second LLM call with structured output (`AgentDecision`) and adds the recorded actions.
+- Fix during the build: `OrderStore` now uses `check_same_thread=False` because LangGraph runs tools in worker threads. Safe because the connection is read-only.
+
+### First smoke run (not an eval): jacket, wrong fit, TX, Basic, in window
+- Expected: APPROVE, refund $121.65 (120.00 + 9.60 - 7.95 label fee; no shipping refund on a change-of-mind return).
+- Actual: APPROVE, refund $139.55. The model passed `label_fee=0` and `outbound_shipping_refund=9.95`.
+- Cause in the trace: the message-only query retrieved SUP-02 (swimwear FAQ, stale), CAT-01 Fees, Exchanges, and Condition. CAT-01 says "label fee only (POL-05)" without the amount, and POL-05 and POL-08 were not retrieved. The model then guessed the missing numbers instead of escalating, contrary to the prompt's "if the excerpts do not answer, ESCALATE". Two problems: (1) retrieval misses multi-document facts; (2) the model fills gaps with plausible values.
+- Also seen: a malformed cited doc id ("CAT-01 Condition"); `stated_condition` was "not_stated" for "never wore it, tags on" (the enum has no "unworn" value, so this may be a schema gap).
+- This is one example, not a measurement. Treat it as a hypothesis for the dataset: multi-document answers fail under v1 retrieval.
+
+## D-033 Split the "store" into `OrderDatabase` and `ActionLog` (user decision)
+- Why: "store" was ambiguous (storage or the shop) and the class did two unrelated jobs: read-only order lookups, and holding the in-memory list of actions taken in a run.
+- `src/data/order_database.py`: `OrderDatabase` (`get_order`, `get_customer`; read-only SQLite; the old `src/data/store.py` is gone). `src/data/action_log.py`: `ActionLog` (`record`, `actions`; in memory, new for every run).
+- Both are passed to the graph through the config as `order_db` and `action_log`. `run_agent(request, order_db=None, action_log=None)` creates fresh ones by default; evals can pass their own to inspect the log afterwards.
+- Also renamed the vector-database variables in the retrieval code (`_vector_store`, `vector_store`) for the same reason.
+- Earlier entries (D-022 to D-032) still say "store"; read them as `OrderDatabase` plus `ActionLog`.
+- Tests: `tests/data/order_database_test.py` and `tests/data/action_log_test.py` (46 tests in total pass, including the end-to-end run).
+
+## D-034 Tracing decorator moved onto `retrieve()`; removed the `_search_policy` wrapper
+- The wrapper existed only to give `@traceable` something to decorate. The decorator now sits on `retrieve()` in `src/rag/chunk_retriever.py`, and the retrieve node calls it directly. Any other caller of `retrieve` (for example the retrieval evals) also gets the span.
+- Cost: `retrieve` now depends on langsmith, and each retrieval eval call creates a trace span when tracing is on.
+
+## D-035 The graph routes on the agent's decision; actions are recorded by code (user direction; supersedes the action-tool part of D-021 and the `finalize` node of D-032)
+- Problem with the first build: the agent node ended in prose, so the decision was only implied (by which action tool it happened to call) and a second LLM call (`finalize`) had to read it back out. The design diagram showed the decision routing the graph; the code did not match.
+- Now: the agent's tools are the four calculators plus `submit_decision`, whose arguments are the `AgentDecision` fields (including a new `approved_action`: create_rma, keep_it_refund, cancel_order, create_exchange). Calling it ends the agent's work. `read_decision` validates it; `route_decision` sends APPROVE to `record_approval`, ESCALATE to `record_escalation`, DENY straight to `finish`; `finish` builds the `AgentResult`. `nudge` sends the agent back if it replies without any tool call; an invalid submission is returned to the model with an error. All loops are bounded by the step limit.
+- The action tools (`create_rma`, `keep_it_refund`, `cancel_order`, `create_exchange`, `open_escalation`) are gone as LLM tools. The record nodes write the same `Action` records from the decision's fields, so a recorded action always matches the decision. `finalize` and its second model call are gone.
+- Benefits: the decision is explicit and routable, one fewer model call per run, and no decision-versus-action mismatch to police.
+- Costs and risks: the model can now leave `approved_action` empty on an APPROVE (nothing is recorded; an eval must flag it) and can mislabel it. We lose the trajectory check "did the model call the right action tool"; the check becomes "does the decision's approved_action fit the case". `decision`/`approved_action` consistency is checked by evals, not by schema validators (D-029).
+- Files: `src/agent/{state,tools,prompts,nodes,graph}.py`, `tests/agent/graph_test.py` (57 tests pass, including one live run). The first live run still gave the v1 wrong answer on the jacket case ($139.55 instead of $121.65, and it cited SUP-02), confirming the failure comes from retrieval and the model guessing, not from the graph shape.
+
+## D-036 A `decide` step (structured output) replaces `submit_decision`, `nudge`, and `read_decision` (user decision; supersedes those parts of D-035)
+- Graph now: `load_order` -> (`order_not_found` | `retrieve` -> `agent` <-> `tools` -> `decide` -> route on the label -> `record_approval` / `record_escalation` / `finish`) -> `finish`.
+- The `agent` node only gathers facts: it binds the four calculators and stops calling tools when it has what it needs. `decide` is a second model call using `with_structured_output(AgentDecision)`, so the decision is always schema-valid. Routing is on `decision.decision`; the record nodes and `finish` are unchanged (actions are still recorded by code, D-035).
+- Removed: the `submit_decision` tool (and `src/agent/tools.py`), the `nudge` node, the `read_decision` node with its retry loop, and the "model did not submit properly" failure class. `route_after_agent` is now a two-way choice (tools or decide).
+- Cost: one more model call per run, re-sending the whole prompt (roughly a third more tokens), and the agent's closing prose is mostly discarded. Risk: the analysis and the decision could disagree; `decide` sees the calculator results and is told to copy amounts from them. An eval check should compare the decision's refund amount against the calculator results in the trajectory.
+- Observed in the first live run: despite the prompt asking for a brief analysis, the agent's closing message was written as a customer reply ("Hi Alex..."), so the model does not fully follow that instruction. It is harmless (`decide` writes the real reply) but wasteful. The run still produced the known v1 error ($139.55 instead of $121.65), so the graph shape is not the cause.
+- 55 tests pass, including one live run. Tests for the removed nodes and paths were deleted.
+
+## D-037 A `record_denial` node, so every decision leaves one entry in the action log (user decision)
+- DENY used to go straight to `finish` and leave the action log empty. Now DENY -> `record_denial` -> `finish`, symmetric with `record_approval` and `record_escalation`. It records a new `Action` type, `record_denial`, with the decision's rationale as the reason and the cited documents.
+- Why: an audit trail of what was decided and why (for disputes and chargebacks), and a cleaner eval invariant: a normal run records exactly one entry, and an empty log means something went wrong instead of "maybe a denial".
+- The corpus does not require logging denials (OPS-01 says a clear denial needs no action); this is our own design choice. The action log now means "what was decided and done", not only side effects.
+- The unknown-order branch still records one `open_escalation`, so that path also has exactly one entry.
+- Live checks after adding it (single runs, not evals): a used and muddy jacket with a change-of-mind request gave DENY with one `record_denial` entry, as designed (it cited CAT-09, SEA-05, and the superseded ARC-01, so a stale document reached the decision even on a correct denial). A change-of-mind request on the perishable gift basket (JP-1005, "gourmet gift basket") was wrongly APPROVED and cited SUP-02 and POL-12: the message-only query matched "gift" and retrieved the gift-return policy instead of CAT-05, and the model then applied gift-return rules (store credit) that we scoped out (D-023). Both are v1 retrieval failures worth turning into dataset cases.
+
+## D-038 Keep the record nodes and the action log (user decision)
+- Considered dropping `record_approval`, `record_escalation`, `record_denial`, and `ActionLog`, and letting the evals read the label and `approved_action` from the decision. Kept them.
+- Why: they are the seam where real integrations (RMA creation, ticketing, case notes) would plug in, they give every run exactly one recorded entry, and they keep the "agent that takes actions" story visible in the diagram and the results.
+- Known weakness, to state in the README: in the mock setup the entries are derived from the decision and only appended to an in-memory list, so they add little information beyond it. The one failure they can still surface is an APPROVE with no `approved_action`.
+
+## D-039 Recorded actions live in the graph state; the `ActionLog` class is gone (user decision; supersedes the action-log part of D-033)
+- The record nodes (and `order_not_found`) now return `{"actions": [Action(...)]}`; `actions` is a state field with an add reducer, and `finish` copies it into `result.actions`. `ActionLog`, its test, the `action_log` config key, and `run_agent`'s `action_log` argument are removed. `run_agent(request, order_db=None)` is all that is left.
+- Why: simpler (one class and one config key fewer), and the recorded action shows up in each node's LangSmith output instead of only in the final result. The evals are unaffected: they score `result.actions`, the same field as before.
+- The record nodes no longer need the graph config; only `load_order` uses it (for the order database).
+- Still true from D-038: the entries are derived from the decision, so they add little beyond it; this change did not alter that. Earlier entries that mention the action log describe the previous design.
+- 57 tests pass, including one live run.
+
+## D-040 Removed the `finish` node; `run_agent` builds the `AgentResult` (user decision)
+- Once actions lived in the state (D-039), `finish` only merged two things the state already held. Removed it, and the `result` state field. The three record nodes now go straight to END. `order_not_found` returns a `decision` (a full ESCALATE) and an `actions` entry instead of its own result, so every run ends in the same shape: `decision` plus `actions`.
+- `run_agent` now assembles `AgentResult(**decision, actions=actions)` from the final state. Anyone invoking the graph directly gets the raw state and must assemble the result themselves; only `run_agent` does today.
+- Lost: the merge no longer appears as its own step in the LangSmith trace (trivial). Gained: one node and three edges fewer, and no special case for the unknown-order path.
+- 57 tests pass, including one live run.
+
+## D-041 Two more approved actions: `create_reshipment` and `create_replacement` (user decision)
+- Why: the corpus describes approved outcomes that had no action to record: a lost or missing package is reshipped or refunded (POL-11), a defective item is refunded or replaced (POL-10), a custom item with a production error is remade or refunded (CAT-07). Without them the model had a correct APPROVE and no valid `approved_action`, so `record_approval` recorded nothing.
+- Added to `Action.type` and to `approved_action` (with guidance on when each applies in the field description). Both carry the item id and no refund amount. The diagram and the mock-data doc list them.
+- The other cause of an APPROVE with no recorded action remains (the model leaves the optional field empty), by design (D-029); the evals check for it.

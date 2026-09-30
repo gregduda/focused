@@ -1,6 +1,6 @@
 """Typed records for orders, customers, requests, and recorded actions.
 
-Money is Decimal dollars in these models (the database stores floats like 8.54; the store rounds each
+Money is Decimal dollars in these models (the database stores floats like 8.54; the database class rounds each
 value to two decimals and converts, so no float arithmetic happens downstream).
 Dates and times are naive datetimes, read as US Pacific time (POL-02). Day counts use `.date()`.
 Field meanings are documented in design/mock-data.md.
@@ -75,8 +75,11 @@ class AgentRequest(BaseModel):
 
 
 class Action(BaseModel):
-    """One thing the agent did during a run. Kept in memory, never persisted."""
-    type: Literal["create_rma", "keep_it_refund", "cancel_order", "create_exchange", "open_escalation"]
+    """One thing recorded during a run: an action taken, or a denial noted. Kept in memory, never persisted."""
+    type: Literal[
+        "create_rma", "keep_it_refund", "cancel_order", "create_exchange", "create_reshipment", "create_replacement",
+        "open_escalation", "record_denial",
+    ]
     order_id: str
     item_id: str | None = None
     refund_amount: Decimal | None = None

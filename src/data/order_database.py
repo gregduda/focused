@@ -1,4 +1,4 @@
-"""Read-only access to the mock order database, plus the in-memory list of actions taken in one run.
+"""Read-only access to the mock order database.
 
 Create the database first (see design/mock-data.md):
     sqlite3 data/orders.db < data/schema.sql && sqlite3 data/orders.db < data/seed.sql
@@ -10,7 +10,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from src.data.models import Action, Customer, Item, Order
+from src.data.models import Customer, Item, Order
 
 load_dotenv()
 
@@ -23,12 +23,13 @@ def _dollars(amount: float | None) -> Decimal | None:
     return None if amount is None else Decimal(str(round(amount, 2))).quantize(Decimal("0.01"))
 
 
-class OrderStore:
+class OrderDatabase:
     def __init__(self, db_path: Path = DEFAULT_DB_PATH):
         # mode=ro: the connection cannot write, so a run cannot change the data.
-        self._conn = sqlite3.connect(f"{Path(db_path).resolve().as_uri()}?mode=ro", uri=True)
+        # check_same_thread=False: LangGraph runs tools in worker threads. Safe here because it is read-only.
+        self._conn = sqlite3.connect(f"{Path(db_path).resolve().as_uri()}?mode=ro", uri=True,
+                                     check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self.actions: list[Action] = []
 
     def get_order(self, order_id: str) -> Order | None:
         row = self._conn.execute("SELECT * FROM orders WHERE order_id = ?", (order_id,)).fetchone()
@@ -61,6 +62,8 @@ class OrderStore:
 
     def get_customer(self, customer_id: str) -> Customer:
         row = self._conn.execute("SELECT * FROM customers WHERE customer_id = ?", (customer_id,)).fetchone()
+        if row is None:  # every order points at a customer, so this means the data is broken
+            raise LookupError(f"customer {customer_id} not found: the order database is inconsistent")
         return Customer(
             customer_id=row["customer_id"],
             first_name=row["first_name"],
@@ -71,6 +74,3 @@ class OrderStore:
             refunded_last_60d=_dollars(row["refunded_last_60d"]),
             last_keep_it_refund_date=row["last_keep_it_refund_date"],
         )
-
-    def record_action(self, action: Action) -> None:
-        self.actions.append(action)

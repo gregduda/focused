@@ -16,11 +16,12 @@
 ```
 request(order_id, message, today) -> load order/customer tool
    -> retrieve policy chunks (RAG) -> deterministic calc tools -> decision + customer message
-   -> action tools (create_rma, keep_it_refund, cancel_order, open_escalation, warranty_ticket)
+   -> agent gathers facts -> decide (structured output) -> graph routes on the label -> code records the action (create_rma, keep_it_refund,
+      cancel_order, create_exchange, open_escalation)
 ```
 - Structured output: `decision` in {APPROVE, DENY, ESCALATE}, `refund_amount`, `reason_code`, `cited_doc_ids`,
   `customer_message`.
-- DECIDED (D-021): calc tools should take parameters the LLM read from
+- DECIDED (D-021, action part superseded by D-036): calc tools should take parameters the LLM read from
   retrieved docs (window_days, fee %) rather than hard-code policy, or RAG becomes decorative and the eval
   stops measuring retrieval. Date/money arithmetic itself is always deterministic code.
 - Mock data: JSON/py fixtures for orders + customers with the README fields. Dataset builder generates

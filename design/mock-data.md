@@ -1,4 +1,4 @@
-# Mock data and store (proposal, not built)
+# Mock data and the order database
 
 Status: design settled (D-022 to D-024); nothing here is implemented yet.
 
@@ -6,8 +6,8 @@ Status: design settled (D-022 to D-024); nothing here is implemented yet.
 The agent needs orders and customers to reason about. There is no real order system, so we fake one, kept as small as possible:
 
 - **A read-only SQLite database** (`orders.db`) with three tables: `customers`, `orders`, `items`. The agent looks orders up by `order_id`. Python's built-in `sqlite3` is enough: no server, no extra install.
-- **Never updated by a run.** The store opens the file in read-only mode (`file:orders.db?mode=ro`), so a run physically cannot change it. Evals are therefore repeatable.
-- **Actions live in memory.** When the agent calls an action tool (create RMA, escalate, ...), the tool appends a record to a Python list for that run. The evals read the list and it is discarded. Nothing about actions is written to the database or to a file. (The LangSmith trace also shows every tool call.)
+- **Never updated by a run.** `OrderDatabase` opens the file in read-only mode (`file:orders.db?mode=ro`), so a run physically cannot change it. Evals are therefore repeatable.
+- **Actions live in the run's state.** After the agent decides, a record node adds an action record (create RMA, escalate, note a denial, ...) to the graph state, and the result carries it out as `result.actions`. The evals read it there. Nothing about actions is written to the database or to a file (D-039).
 - **The database is the single source of truth.** It is created from two SQL text files (`schema.sql`, `seed.sql`). There is no second copy of the data in Python. The reference oracle reads the rows straight from the database, builds Pydantic objects, and computes expected dates and amounts, so those values still come from code.
 
 No Postgres, no files written per run.
@@ -18,7 +18,7 @@ data/schema.sql           CREATE TABLE statements for customers, orders, items
 data/seed.sql             INSERT statements: demo orders plus one group per eval case's order
 data/orders.db            created with: sqlite3 data/orders.db < data/schema.sql < ... (see README)
 src/data/models.py        Pydantic models: Order, Item, Customer, AgentRequest, Action
-src/data/store.py         OrderStore: read-only sqlite3 wrapper returning models, plus the in-memory actions list
+src/data/order_database.py  OrderDatabase: read-only sqlite3 wrapper returning models
 ```
 
 ## Records
@@ -80,29 +80,32 @@ Three tables, one row per record, matching the field tables above.
 | `items` | `item_id` | one row per line item; `order_id` links to `orders`; `tags` stored as a comma-separated string |
 
 Storage conventions, chosen to avoid classic bugs:
-- **Money as floats** with two decimals (`price_paid` 120.00, `tax` 9.60). The store rounds each value to two decimals and converts it to `Decimal` when building the models, so the calculators never do float arithmetic. Rounding is done once, in the calculators (POL-08: half up).
+- **Money as floats** with two decimals (`price_paid` 120.00, `tax` 9.60). `OrderDatabase` rounds each value to two decimals and converts it to `Decimal` when building the models, so the calculators never do float arithmetic. Rounding is done once, in the calculators (POL-08: half up).
 - **`order_date` and `delivered_date` as ISO date-times** (`2026-09-29T14:30:00`), naive and read as US Pacific time (POL-02 sets deadlines in Pacific). The window logic uses the calendar date part. `estimated_delivery_date` and `last_keep_it_refund_date` stay date-only.
 - **Booleans as 0 or 1.**
 - No foreign-key trickery, no indexes beyond the primary keys; the tables hold tens of rows.
 
-## The store
+## The order database
 ```python
-class OrderStore:
-    def __init__(self, db_path)                  # opens read-only
-    def get_order(order_id) -> Order | None      # joins items
+class OrderDatabase:                              # read-only, never changes during a run
+    def __init__(self, db_path)                   # opens read-only
+    def get_order(order_id) -> Order | None       # joins items
     def get_customer(customer_id) -> Customer
-    def record_action(action: Action) -> None    # appends to the in-memory list
-    actions: list[Action]                        # what happened during this run
 ```
+The agent receives it through the graph config (`order_db`).
 An unknown `order_id` returns `None`. Proposed behavior: ESCALATE with a message that the order could not be found (consistent with D-006, three labels only).
 
-## Actions the agent can record
+## Actions recorded during a run
+The record nodes write these into the graph state (`actions`) after the `decide` step (D-036, D-039); the model does not call them.
 | `type` | Fields | Corpus source |
 |---|---|---|
 | `create_rma` | order_id, item_ids, refund_amount, refund_method (`original` or `store_credit`) | POL-01, OPS-01 |
 | `keep_it_refund` | order_id, item_id, refund_amount | POL-11 |
 | `cancel_order` | order_id, refund_amount | POL-14 |
 | `create_exchange` | order_id, item_id | POL-13 |
+| `create_reshipment` | order_id, item_id | POL-11 (lost package, missing item) |
+| `create_replacement` | order_id, item_id | POL-10 (defective, refund or replacement), CAT-07 (remake) |
+| `record_denial` | order_id, reason, docs_consulted | OPS-01 says a clear denial needs no action; we note it for audit (D-037) |
 | `open_escalation` | order_id, escalation_type, reason, docs_consulted | OPS-01 |
 
 `escalation_type` values: `standard`, `warranty`, `loss_prevention`, `safety`, `goodwill`, `missing_package`, `high_value`. These are our own labels, useful for slicing eval results; the corpus names only some of them. The corpus says an escalation hand-off includes the order number, the request, the policy documents consulted, and the reason (OPS-01), which is why those fields are there.
@@ -133,6 +136,6 @@ Tradeoffs to know about:
 ## Resolved questions (D-024)
 1. **Hour-level rules:** add `now` on the request; `delivered_date` on the order now carries the time of day (there is no separate `delivered_at` column).
 2. **Multi-item orders:** single-item orders only for now. Each order has exactly one item. The `items` table stays (one row per order) so multi-item can be added later without changing the schema.
-3. **Unknown order id:** the store returns `None` and the agent ESCALATES with a message that the order could not be found.
+3. **Unknown order id:** `get_order` returns `None` and the agent ESCALATES with a message that the order could not be found.
 
 Cases dropped by going single-item: B17 and B18 (spend threshold and code proration), B19 (one label for two items). POL-09's threshold and proration rules stay in the corpus but are not evaluated.
