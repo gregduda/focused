@@ -25,7 +25,7 @@ flowchart TD
 ```
 
 ## Where the decision is made
-The `decide` step makes the decision. It is a second model call whose output is forced to match the decision schema, so it is always valid: the label, the reason code, the item condition, the refund amount, the action to carry out or the escalation type, the cited documents, and the reply to the customer. The graph then routes on the label. What happens next is recorded by code, not by the model: an action for an approval or an escalation, and a note for a denial. So the recorded entry always matches the decision, and a normal run records exactly one entry. The one exception is an APPROVE where the model names no action to carry out: nothing is recorded, and the evals flag it.
+The `decide` step makes the decision. It is a second model call whose output is forced to match the decision schema, so it is always valid: the label, the reason code, the item condition, the refund amount, the return deadline, the action to carry out or the escalation type, the cited documents, and the reply to the customer. The graph then routes on the label. What happens next is recorded by code, not by the model: an action for an approval or an escalation, and a note for a denial. So the recorded entry always matches the decision, and a normal run records exactly one entry. The one exception is an APPROVE where the model names no action to carry out: nothing is recorded, and the evals flag it.
 
 The `agent` step only gathers facts. Its calculator calls and closing analysis are input to `decide`.
 

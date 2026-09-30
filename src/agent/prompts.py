@@ -53,7 +53,7 @@ DECIDE_INSTRUCTION = (
     "Now record the final decision for this request, based on everything above, including your analysis and the "
     "calculator results. Choose APPROVE, DENY, or ESCALATE. For APPROVE, name the action to carry out in "
     "approved_action. For ESCALATE, give the escalation type. Copy any refund amount exactly from a calculator "
-    "result. Write the reply to the customer following the reply guidelines in your instructions."
+    "result. If you calculated a return deadline, copy the applied deadline exactly into return_deadline. Write the reply to the customer following the reply guidelines in your instructions."
 )
 
 

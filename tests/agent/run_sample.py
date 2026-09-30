@@ -45,7 +45,7 @@ def run_one(order_id: str, message: str, today: str, now: str | None) -> None:
     with collect_runs() as runs:
         result = run_agent(request)
     print(f"\n=== {order_id} | today {today} | {message}")
-    print(f"decision: {result.decision}   reason_code: {result.reason_code}   refund: {result.refund_amount}")
+    print(f"decision: {result.decision}   reason_code: {result.reason_code}   refund: {result.refund_amount}   deadline: {result.return_deadline}")
     print(f"actions:  {[(a.type, str(a.refund_amount) if a.refund_amount is not None else None) for a in result.actions]}")
     print(f"cited:    {result.cited_doc_ids}")
     print(f"reply:    {result.customer_message[:400]}")

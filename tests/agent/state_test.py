@@ -13,6 +13,7 @@ from src.data.models import Action, AgentRequest
 def test_decision_needs_only_decision_rationale_and_message():
     d = AgentDecision(decision="DENY", rationale="Past the window.", customer_message="Sorry, ...")
     assert d.refund_amount is None and d.cited_doc_ids == [] and d.stated_condition == "not_stated"
+    assert d.return_deadline is None
 
 
 def test_decision_rejects_unknown_labels():
@@ -25,7 +26,7 @@ def test_decision_rejects_unknown_labels():
 def test_result_carries_actions_and_round_trips_through_json():
     r = AgentResult(
         decision="APPROVE", reason_code="CHANGED_MIND", refund_amount="189.05", refund_method="original",
-        cited_doc_ids=["ST-CA", "CAT-02"], rationale="10% restocking in CA.", customer_message="Approved.",
+        return_deadline="2026-10-15", cited_doc_ids=["ST-CA", "CAT-02"], rationale="10% restocking in CA.", customer_message="Approved.",
         actions=[Action(type="create_rma", order_id="JP-1002", refund_amount=Decimal("189.05"))],
     )
     assert AgentResult.model_validate_json(r.model_dump_json()) == r

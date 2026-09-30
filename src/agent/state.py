@@ -67,6 +67,11 @@ class AgentDecision(BaseModel):
         description="Total refund in dollars as a two-decimal string, copied exactly from a calculator "
                     "result, e.g. \"189.05\". Null unless the amount is known.")
     refund_method: Literal["original", "store_credit"] | None = None
+    # A string for the same reason as refund_amount: it is copied from a calculator result, not worked out.
+    return_deadline: str | None = Field(
+        default=None,
+        description="The last day the customer can return the item, as YYYY-MM-DD, copied exactly from "
+                    "applied_deadline in a deadline calculator result. Null if no deadline was calculated.")
     approved_action: Literal[
         "create_rma", "keep_it_refund", "cancel_order", "create_exchange", "create_reshipment", "create_replacement",
     ] | None = Field(
