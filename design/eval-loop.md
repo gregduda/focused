@@ -4,15 +4,21 @@ How we build, evaluate, learn, and improve. The agent's own flow is in `agent-ru
 
 ```mermaid
 flowchart TD
-    DS[("Eval dataset<br/>normal, edge, failure, adversarial<br/>inputs plus reference decision,<br/>amount, gold doc ids")]
-    ORC["Reference oracle<br/>dates and amounts computed by code"] --> DS
-    DS --> RUN["Run agent<br/>today passed per case"]
-    RUN --> TR[("LangSmith traces")]
-    RUN --> DET["Deterministic checks<br/>decision, amount, deadline,<br/>escalation, disclosure, PII,<br/>gold-doc recall, stale doc retrieved"]
-    RUN --> JUDGE["LLM judge<br/>tone, invented policy,<br/>accusation"]
-    DET --> RES["Results by slice<br/>category, state, tier, season,<br/>decision, adversarial"]
-    JUDGE --> RES
-    RES --> LEARN["Inspect traces<br/>and failures"]
-    LEARN --> FIX["Improve<br/>v2: metadata filtering"]
+    subgraph AUTO["Automated eval"]
+        DS[("<b>Eval dataset</b><br/>inputs + expected<br/>answers<br/>normal, edge,<br/>failure, adversarial")]
+        DS --> RUN["<b>Run agent</b><br/>today passed per case"]
+        RUN --> TR[("<b>LangSmith traces</b>")]
+        RUN --> DET["<b>Deterministic checks</b><br/>decision, amount, deadline,<br/>escalation, PII, retrieval"]
+        RUN --> JUDGE["<b>LLM judge</b><br/>tone, invented policy,<br/>accusation"]
+        DET --> RES["<b>Results by slice</b><br/>category, state,<br/>tier, season,<br/>decision,<br/>adversarial"]
+        JUDGE --> RES
+    end
+    subgraph HUMAN["Human review"]
+        LEARN["<b>Inspect traces<br/>and failures</b>"]
+        FIX["<b>Improve</b><br/>adjust agent"]
+        LEARN --> FIX
+    end
+    RES --> LEARN
+    TR -.-> LEARN
     FIX --> RUN
 ```
