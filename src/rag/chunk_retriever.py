@@ -12,6 +12,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
+from langsmith import traceable
 
 load_dotenv()
 
@@ -22,7 +23,7 @@ DEFAULT_TOP_K = int(os.environ["RETRIEVER_TOP_K"])
 
 
 @lru_cache(maxsize=1)
-def _store() -> Chroma:
+def _vector_store() -> Chroma:
     return Chroma(
         collection_name=COLLECTION,
         # No embedding_function: same local default as embed_sources.py (all-MiniLM-L6-v2). Keep them identical.
@@ -30,12 +31,13 @@ def _store() -> Chroma:
     )
 
 
+@traceable(run_type="retriever", name="policy_retriever")  # shows the query and chunks as their own trace step
 def retrieve(query: str, k: int = DEFAULT_TOP_K) -> list[Document]:
     """Return the k chunks nearest to the query, best first.
 
     Each returned Document has the chunk text (starting with "Title (DOC-ID)") and its metadata,
     plus a "distance" entry (Chroma's L2 distance on unit-length vectors; smaller means closer).
     """
-    results = _store().similarity_search_with_score(query, k=k)
+    results = _vector_store().similarity_search_with_score(query, k=k)
     return [Document(page_content=doc.page_content, metadata={**doc.metadata, "distance": score})
             for doc, score in results]

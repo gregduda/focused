@@ -74,13 +74,13 @@ def main() -> None:
         ids.append(f"{d.metadata['doc_id']}::{n}")
         counts[d.metadata["doc_id"]] = n + 1
 
-    store = Chroma(
+    vector_store = Chroma(
         collection_name=COLLECTION,
         # No embedding_function: Chroma falls back to its local default, all-MiniLM-L6-v2.
         persist_directory=CHROMA_DIR,
     )
-    store.reset_collection()  # rebuild from scratch so removed docs don't linger
-    store.add_documents(docs, ids=ids)
+    vector_store.reset_collection()  # rebuild from scratch so removed docs don't linger
+    vector_store.add_documents(docs, ids=ids)
     print(f"Indexed {len(docs)} chunks from {len(counts)} docs into '{COLLECTION}' at {CHROMA_DIR}")
 
 
