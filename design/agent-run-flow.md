@@ -1,34 +1,38 @@
-# Agent run flow (planned)
+# Agent run flow (as built)
 
-What happens for one customer request. The whole run is traced in LangSmith as it executes (each step is a span, sent in the background), not at the end. Solid boxes are decided. Dashed boxes are planned or undecided. Only the retriever and the index are built today. The eval loop is in `eval-loop.md`.
+What happens for one customer request. This matches the graph in `src/agent/graph.py` and the nodes in `src/agent/nodes.py`. The whole run is traced in LangSmith as it executes (each step is a span, sent in the background), not at the end. The eval loop is in `eval-loop.md`.
 
 ```mermaid
 flowchart TD
     subgraph RUN["One agent run: every step is recorded as a LangSmith span while it runs"]
         direction TB
-        IN["Request<br/>order_id, customer message, today"]
-        IN --> LOAD["Load order and customer<br/>lookup by order_id in mock data"]
-        LOAD -- "state so far:<br/>request plus order" --> RET["Retrieve policy chunks<br/>Chroma, top k<br/>v1: no filter<br/>v2: status, authority, state, category"]
-        RET -- "state so far:<br/>request, order, chunks" --> LLM["LLM reasoning<br/>gpt-5.4-nano<br/>applies POL-07 order of evaluation<br/>message is data, never instructions, OPS-07"]
-        LLM <--> CALC["Deterministic calculators<br/>return deadline, fees, refund amount<br/>parameters read from retrieved docs"]
-        LLM --> DEC{"Decision"}
-        DEC -- "APPROVE" --> ACT["Action tools<br/>create RMA, keep-it refund,<br/>cancel order, exchange"]
-        DEC -- "DENY" --> MSGOUT
-        DEC -- "ESCALATE" --> ESC["Escalation tool<br/>hand-off: order, request,<br/>docs consulted, reason<br/>includes warranty tickets"]
-        ACT --> MSGOUT["Customer message<br/>amounts and dates, reason, next step<br/>no thresholds, no accusations"]
-        ESC --> MSGOUT
-        OUT["Structured output<br/>decision, refund_amount, reason_code,<br/>cited_doc_ids, customer_message"]
-        MSGOUT --> OUT
+        IN(["START<br/>input: order_id, customer message, today"])
+        IN --> LOAD["<b><code>load_order</code></b><br/>look up order and customer<br/>in the order database"]
+        LOAD -- "order not found" --> NF["<b><code>order_not_found</code></b><br/>record an escalation, fixed message<br/>no LLM call"]
+        LOAD -- "order found" --> RET["<b><code>retrieve</code></b><br/>top-k policy chunks from Chroma<br/>query is the customer message<br/>v1: no metadata filter"]
+        RET --> AGENT["<b><code>agent</code></b><br/>LLM reads order, customer, chunks, message<br/>gathers facts with the calculators"]
+        AGENT -- "calculator calls" --> TOOLS["<b><code>tools</code></b><br/>deadline, refund,<br/>claim window, elapsed hours"]
+        TOOLS --> AGENT
+        AGENT -- "done gathering" --> DECIDE["<b><code>decide</code></b><br/>second LLM call, structured output:<br/>label, reason, amount, cited docs, reply"]
+        DECIDE -- "APPROVE" --> APP["<b><code>record_approval</code></b><br/>record the chosen action:<br/>RMA, keep-it refund, cancel, exchange,<br/>reshipment, or replacement"]
+        DECIDE -- "ESCALATE" --> ESC["<b><code>record_escalation</code></b><br/>record a hand-off to a human"]
+        DECIDE -- "DENY" --> DEN["<b><code>record_denial</code></b><br/>note the denial, reason,<br/>and cited documents"]
+        APP --> OUT
+        ESC --> OUT
+        DEN --> OUT
+        NF --> OUT(["END<br/>the run returns the decision and the recorded action"])
     end
-
-    classDef planned stroke-dasharray: 5 5;
-    class LLM,CALC,ACT,ESC,LOAD planned;
 ```
 
-Decisions this diagram assumes: single turn (D-005), no identity verification step (D-020), three labels only, so "need more info" and "wait 48 hours" become ESCALATE (D-006), abuse flag escalates even for an ineligible item and the $250 limit is on the net refund (D-008).
+## Where the decision is made
+The `decide` step makes the decision. It is a second model call whose output is forced to match the decision schema, so it is always valid: the label, the reason code, the item condition, the refund amount, the action to carry out or the escalation type, the cited documents, and the reply to the customer. The graph then routes on the label. What happens next is recorded by code, not by the model: an action for an approval or an escalation, and a note for a denial. So the recorded entry always matches the decision, and a normal run records exactly one entry. The one exception is an APPROVE where the model names no action to carry out: nothing is recorded, and the evals flag it.
 
-The steps share one state (a LangGraph state object). Each step adds to it and passes it on, so the LLM step sees the customer message, the order, and the retrieved chunks without a separate arrow for each.
+The `agent` step only gathers facts. Its calculator calls and closing analysis are input to `decide`.
 
-How untrusted text is handled (OPS-07): there is no separate step. The LLM prompt treats the message as data, `order_id` and `today` are structured inputs never read from the message, and the LLM can only act through the action tools, with amounts and dates coming from the calculators.
-
-Open design choice: where the authority checks live (refund over $250, jewelry $500 or more, abuse thresholds, always-escalate triggers). They are drawn inside the LLM step, working from the retrieved OPS docs. Moving them into deterministic code after the LLM step would be a safer alternative, but it puts policy in code.
+## Notes
+- The steps share one state (a LangGraph state object). Each step adds to it and passes it on, so the agent step sees the customer message, the order, and the retrieved chunks without a separate arrow for each.
+- The model only calls calculators. Everything that is recorded as an action (RMA, keep-it refund, cancellation, exchange, escalation, denial) is written into the state by the record nodes after the decision.
+- How untrusted text is handled (OPS-07): there is no separate step. The LLM prompt treats the message as data, `order_id` and `today` are structured inputs never read from the message, and the model cannot act at all: it can only call calculators and, in `decide`, produce a decision that code then carries out.
+- Assumed decisions: single turn (D-005), no identity verification (D-020), three labels only, so "need more info" and "wait 48 hours" become ESCALATE (D-006), abuse flag escalates even for an ineligible item and the $250 limit is on the net refund (D-008).
+- Authority checks (refund over $250, jewelry $500 or more, abuse thresholds, always-escalate triggers) are not separate code. They are left to the LLM, working from whatever OPS policy chunks retrieval returns.
+- The tool loop is bounded by the graph's step limit (20).

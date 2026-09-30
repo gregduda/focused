@@ -1,11 +1,13 @@
 """The state that flows through the LangGraph agent, and the structured result it produces.
 
-Flow (see design/agent-run-flow.md):  request -> load order -> retrieve -> LLM + tool loop -> result
+Flow (see design/agent-run-flow.md):  request -> load order -> retrieve -> LLM + calculators -> decision
+                                       -> route on the decision -> record the action -> end
+(run_agent then combines the decision and the recorded actions into an AgentResult)
 
-Each node reads the state and returns only the keys it changes. The store (database plus in-memory
-actions) is not part of the state because it is not serializable; nodes and tools get it from the
-graph config instead.
+Each node reads the state and returns only the keys it changes. The order database is not part of the state because it is
+not serializable; nodes get it from the graph config instead.
 """
+import operator
 from decimal import Decimal
 from typing import Annotated, Literal, TypedDict
 
@@ -65,6 +67,16 @@ class AgentDecision(BaseModel):
         description="Total refund in dollars as a two-decimal string, copied exactly from a calculator "
                     "result, e.g. \"189.05\". Null unless the amount is known.")
     refund_method: Literal["original", "store_credit"] | None = None
+    approved_action: Literal[
+        "create_rma", "keep_it_refund", "cancel_order", "create_exchange", "create_reshipment", "create_replacement",
+    ] | None = Field(
+        default=None,
+        description="Only for APPROVE: which action to carry out. create_rma for a return with a refund, "
+                    "keep_it_refund for a refund without a return, cancel_order for an order that has not shipped, "
+                    "create_exchange for a size, color, or variant swap, create_reshipment to send the same order "
+                    "again (lost or missing package or item), create_replacement to send a replacement or remake "
+                    "of an item (defective item, or a custom item with a production error). "
+                    "Null for DENY and ESCALATE.")
     escalation_type: EscalationType | None = Field(
         default=None, description="Required when the decision is ESCALATE; otherwise null.")
     cited_doc_ids: list[str] = Field(
@@ -81,7 +93,7 @@ class AgentDecision(BaseModel):
 
 class AgentResult(AgentDecision):
     """The final structured output: the LLM's decision plus what the code recorded."""
-    actions: list[Action] = Field(default_factory=list)  # copied from the store when the run ends
+    actions: list[Action] = Field(default_factory=list)  # the state's recorded actions, added by run_agent
 
 
 class AgentState(TypedDict, total=False):
@@ -89,5 +101,6 @@ class AgentState(TypedDict, total=False):
     order: Order | None                                  # set by the load node; None if the id is unknown
     customer: Customer | None
     chunks: list[RetrievedChunk]                         # set by the retrieve node
-    messages: Annotated[list[AnyMessage], add_messages]  # the LLM and tool conversation
-    result: AgentResult | None                           # set by the final node
+    messages: Annotated[list[AnyMessage], add_messages]  # the LLM and calculator conversation
+    decision: AgentDecision | None                       # set by the decide node
+    actions: Annotated[list[Action], operator.add]       # what the record nodes recorded (each adds to the list)
