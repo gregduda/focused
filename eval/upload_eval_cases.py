@@ -30,6 +30,7 @@ def to_example(case: dict) -> dict:
             "case_id": case["case_id"],
             "kind": case["kind"],
             "season": case["season"],
+            "split": case["split"],
             "category": order["item"]["category"],
             "state": order["ship_to_state"],
             "tier": order["loyalty_tier_at_purchase"],

@@ -6,6 +6,7 @@ experiment, next to the traces; open the link it prints to read them (see design
 From the repo root:
     python -m eval.run_eval                  # experiment named by the time, e.g. 2026/09/30 19:20:24
     python -m eval.run_eval --label v2       # v2-2026/09/30 19:20:24, for example after improving the agent
+    python -m eval.run_eval --split dev      # only the development cases (see D-060); also: holdout, all
 """
 import argparse
 import re
@@ -141,6 +142,9 @@ EVALUATORS = [
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--label", help="optional text put in front of the experiment name, for example v2")
+    parser.add_argument("--split", choices=["all", "dev", "holdout"], default="all",
+                        help="which cases to run (default: all). Use dev while improving the agent and keep holdout "
+                             "for the final comparison (D-060)")
     args = parser.parse_args()
 
     # LangSmith always adds a random suffix to a name prefix, so create the experiment here and pass it in:
@@ -148,12 +152,16 @@ def main() -> None:
     name = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
     if args.label:
         name = f"{args.label}-{name}"
+    if args.split != "all":
+        name = f"{name} ({args.split})"
     client = Client()
     experiment = client.create_project(name, reference_dataset_id=client.read_dataset(dataset_name=DATASET_NAME).id)
 
+    examples = client.list_examples(dataset_name=DATASET_NAME,
+                                    metadata=None if args.split == "all" else {"split": args.split})
     evaluate(
         target,
-        data=DATASET_NAME,
+        data=list(examples),
         evaluators=EVALUATORS,
         experiment=experiment,
         client=client,
