@@ -6,6 +6,7 @@ experiment, next to the traces; open the link it prints to read them (see design
 From the repo root:
     python -m eval.run_eval                  # experiment named by the time, e.g. 2026/09/30 19:20:24
     python -m eval.run_eval --label v2       # v2-2026/09/30 19:20:24, for example after improving the agent
+    python -m eval.run_eval --split quick    # a fixed 30 dev cases, one pass: the fast loop (D-063)
     python -m eval.run_eval --split dev      # only the development cases (see D-060); also: holdout, all
     python -m eval.run_eval --label baseline --repeat 3    # every case three times in one experiment
 """
@@ -13,7 +14,7 @@ import argparse
 import re
 import tempfile
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -70,7 +71,11 @@ def decision_correct(outputs: dict, reference_outputs: dict) -> dict:
 
 
 def refund_correct(outputs: dict, reference_outputs: dict) -> dict:
-    return _result("refund_correct", _amount(outputs["refund"]) == _amount(reference_outputs["refund"]),
+    try:
+        got = _amount(outputs["refund"])
+    except InvalidOperation:  # the agent wrote text such as "null" instead of a number
+        return _result("refund_correct", False, f"refund {outputs['refund']!r} is not a number")
+    return _result("refund_correct", got == _amount(reference_outputs["refund"]),
                    f"got {outputs['refund']}, expected {reference_outputs['refund']}")
 
 
@@ -143,8 +148,9 @@ EVALUATORS = [
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--label", help="optional text put in front of the experiment name, for example v2")
-    parser.add_argument("--split", choices=["all", "dev", "holdout"], default="all",
-                        help="which cases to run (default: all). Use dev while improving the agent and keep holdout "
+    parser.add_argument("--split", choices=["all", "dev", "quick", "holdout"], default="all",
+                        help="which cases to run (default: all). quick is a fixed 30 of the dev cases for fast "
+                             "iteration (D-063); use dev or quick while improving the agent and keep holdout "
                              "for the final comparison (D-060)")
     parser.add_argument("--repeat", type=int, default=1,
                         help="run every case this many times inside the one experiment (default: 1); the agent "
@@ -163,8 +169,8 @@ def main() -> None:
         name, reference_dataset_id=client.read_dataset(dataset_name=DATASET_NAME).id,
         metadata={"label": args.label, "split": args.split, "repetitions": args.repeat})
 
-    examples = client.list_examples(dataset_name=DATASET_NAME,
-                                    metadata=None if args.split == "all" else {"split": args.split})
+    selector = {"all": None, "quick": {"quick": "yes"}}.get(args.split, {"split": args.split})
+    examples = client.list_examples(dataset_name=DATASET_NAME, metadata=selector)
     evaluate(
         target,
         data=list(examples),

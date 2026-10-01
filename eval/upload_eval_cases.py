@@ -31,6 +31,7 @@ def to_example(case: dict) -> dict:
             "kind": case["kind"],
             "season": case["season"],
             "split": case["split"],
+            "quick": "yes" if case["quick"] else "no",  # the fixed 30-case set for fast runs (D-063)
             "category": order["item"]["category"],
             "state": order["ship_to_state"],
             "tier": order["loyalty_tier_at_purchase"],
