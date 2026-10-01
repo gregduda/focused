@@ -95,6 +95,8 @@ def escalation_correct(outputs: dict, reference_outputs: dict) -> dict:
 def gold_doc_recall(outputs: dict, reference_outputs: dict) -> dict:
     """The share of the case's gold documents that retrieval returned (1.0 is a pass)."""
     gold = set(reference_outputs["gold_docs"])
+    if not gold:  # the docs do not answer this case, so there is nothing to retrieve
+        return {"key": "gold_doc_recall", "score": None, "comment": "no gold docs for this case"}
     missing = sorted(gold - set(outputs["retrieved_doc_ids"]))
     return {"key": "gold_doc_recall", "score": 1 - len(missing) / len(gold),
             "comment": f"not retrieved: {missing}; retrieved: {outputs['retrieved_doc_ids']}" if missing else None}
