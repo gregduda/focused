@@ -37,6 +37,7 @@ and does a change actually help?
   - `graph.py` wires the steps: look up the order, retrieve policies, reason with the calculators, decide, record the
     action.
   - `nodes.py` has the steps, `prompts.py` has the prompts, `state.py` has the data types.
+  - `versions.py` defines v1 (the original) and v2 (the improved agent) as named sets of settings.
 - **`eval/`**: the evaluation.
   - `cases.json` is the test set. Each case has a customer message, an order, the expected decision, refund, deadline,
     and the policy documents that should be used.
@@ -74,8 +75,10 @@ python -m eval.run_eval --split quick         # 30 cases, one pass (a few minute
 python -m eval.report --experiment "<the name run_eval prints>"
 ```
 
-The models come from `.env` (`OPENAI_MODEL`, and `JUDGE_MODEL` for the LLM judge). Add `--repeat 3` to run every case
-three times, which you want because the agent isn't perfectly consistent. Leave your laptop awake while it runs.
+The models come from `.env`: `OPENAI_MODEL` for the agent, `OPENAI_ESCALATION_CHECK_MODEL` for the escalation check (a
+stronger model, see below), and `JUDGE_MODEL` for the LLM judge. Everything runs v2 unless you ask for `--version v1`.
+Add `--repeat 3` to run every case three times, which you want because the agent isn't perfectly consistent. Leave your
+laptop awake while it runs.
 
 ## How the agent works
 
@@ -86,7 +89,7 @@ flowchart TD
     B --> C["Search the policy docs"]
     C --> D["Agent: reads the policies,<br/>calls the calculators"]
     D <--> T["Calculators:<br/>deadline, refund"]
-    D --> E["Escalation check<br/>(added in v2, runs on every request)"]
+    D --> E["Escalation check<br/>(a separate, stronger model)"]
     E --> F["Decide: APPROVE, DENY, or ESCALATE,<br/>plus the reply to the customer"]
     F --> G["Record the action"]
 ```
@@ -99,20 +102,32 @@ Here's one request from start to finish:
 > *"The jacket doesn't fit. I never wore it and the tags are on. Can I send it back for a refund?"*
 
 1. **Look up the order.** Jacket, $120 plus $9.60 tax, delivered 19 days ago, shipped to Texas, Basic tier.
-2. **Search the policies.** The message is turned into a search and the closest policy chunks come back (apparel returns,
-   return fees, the refund formula, and so on).
-3. **Gather facts.** The model reads the policies and calls the calculators: how many days are left in the return window,
-   and what the refund comes to ($120 + $9.60 tax − $7.95 return label fee = $121.65). The model passes in the numbers; the
-   calculators do the math.
-4. **Decide.** A second model call produces the decision (APPROVE here), the refund, the deadline, the documents it
+2. **Gather the policies.** The message is turned into a search, but only current, authoritative documents for this item
+   and state are searched. A fixed set of core documents (fees, windows, the refund formula, escalation rules) is added
+   every time, plus the ones this order points to (apparel returns, Texas, the Fall Gear-Up promo).
+3. **Gather facts.** The model reads the policies and calls the calculators: the return deadline (Oct 25, because this
+   order is from the Fall Gear-Up promo, which gives 45 days instead of 30) and the refund ($120 + $9.60 tax − $7.95 return
+   label fee = $121.65). The model passes in the numbers; the calculators do the math.
+4. **Check for escalation.** A separate, stronger model reads the escalation rules and the facts and answers one
+   question: does any rule require a human? Here, no. If yes, the case is escalated whatever else the agent thought.
+5. **Decide.** A second model call produces the decision (APPROVE here), the refund, the deadline, the documents it
    relied on, and a friendly reply.
-5. **Record the action.** Plain code writes down what should happen (create a return authorization, open an escalation, or
+6. **Record the action.** Plain code writes down what should happen (create a return authorization, open an escalation, or
    note a denial). Nothing else touches money.
 
-I built some improvements as options that are off by default, so the original version (v1) is always reproducible:
-adding the key policy documents by rule, searching only current and authoritative documents, limiting the search to the
-order's own item category and state, an extra grounding rule in the prompt, a check on the refund amount, and a separate
-escalation check. They're switched on with flags on `run_eval`.
+**v1 and v2.** v1 is the first version I built: it searches the policies with the customer's message alone and trusts
+the model for the rest. v2 adds six things, each of which I tested one at a time against the evaluation (see
+`DECISIONS.md`):
+
+- core policy documents added by rule, plus the ones the order points to (item category, state, season, loyalty tier)
+- the search skips stale and non-authoritative documents
+- the search skips other items' categories and other states' addenda
+- a short rule in the prompt: don't guess values, and don't escalate just to ask for details
+- a check that an approved refund is a number the calculator produced, and that denials carry no refund
+- a separate escalation check, run by a stronger model
+
+`python -m eval.run_eval` runs v2; add `--version v1` for the original, or `--without <setting>` to switch one piece off.
+The settings are in `src/agent/versions.py`.
 
 ## How it's evaluated
 
@@ -126,7 +141,7 @@ to the agent or the judge.
 improvements aren't just tuned to the cases I studied. There's also a fixed set of 30 dev cases for quick runs.
 
 **Running it.** `run_eval.py` runs each case through the agent on its own throwaway database, with that case's date, and
-stores the results as an experiment in LangSmith. Every run is also a trace, so you can open a case and see what was
+stores the results as an experiment in LangSmith (v2 by default, or v1). Every run is also a trace, so you can open a case and see what was
 retrieved, what the calculators were given, and why the agent decided what it did.
 
 **The evaluators.** Anything with a clear right answer is scored by plain code. The LLM judge only handles what code

@@ -4,12 +4,13 @@ Upload the cases first with `python -m eval.upload_eval_cases`. The scores are s
 experiment, next to the traces; open the link it prints to read them (see design/eval-loop.md).
 
 From the repo root:
-    python -m eval.run_eval                  # experiment named by the time, e.g. 2026/09/30 19:20:24
-    python -m eval.run_eval --label v2       # v2-2026/09/30 19:20:24, for example after improving the agent
-    python -m eval.run_eval --split quick    # a fixed 30 dev cases, one pass: the fast loop (D-063)
-    python -m eval.run_eval --split dev      # only the development cases (see D-060); also: holdout, all
-    python -m eval.run_eval --label baseline --repeat 3    # every case three times in one experiment
-    python -m eval.run_eval --split quick --retrieval core --label core    # a retrieval experiment (D-067)
+    python -m eval.run_eval                  # v2 (the default), all cases, one pass
+    python -m eval.run_eval --split quick    # a fixed 30 dev cases: the fast loop (D-063); also: dev, holdout
+    python -m eval.run_eval --repeat 3       # every case three times in one experiment (use this for real results)
+    python -m eval.run_eval --version v1     # the original agent, which reproduces the baseline
+    python -m eval.run_eval --without escalation_check     # an ablation: v2 with one setting off
+    python -m eval.run_eval --cases B1 B2                  # only these cases
+    python -m eval.run_eval --label v2-final               # text put in front of the experiment name
 """
 import argparse
 import os
@@ -26,6 +27,7 @@ from eval.judge import llm_judge
 from eval.run_agent_on_test_cases import build_database
 from eval.upload_eval_cases import DATASET_NAME
 from src.agent.graph import run_agent
+from src.agent.versions import V1, VERSIONS, options_for
 from src.data.models import AgentRequest
 from src.data.order_database import OrderDatabase
 
@@ -34,12 +36,8 @@ load_dotenv()
 # Documents that must not be used: superseded policy, an unapproved draft, the 2023 FAQ, and marketing copy.
 STALE_DOCS = {"ARC-01", "ARC-02", "SUP-02", "MKT-01"}
 
-RETRIEVAL = "v1"  # the retrieval mode the target uses; set from --retrieval in main (see src/rag/forced_docs.py)
-AUTHORITATIVE_ONLY = False  # set from --authoritative-only in main (D-071)
-SCOPE_TO_ORDER = False  # set from --scope-to-order in main (D-072)
-GROUNDING_RULE = False  # set from --grounding-rule in main (D-072)
-AMOUNT_GUARD = False  # set from --amount-guard in main (D-074)
-ESCALATION_CHECK = False  # set from --escalation-check in main (D-080)
+VERSION = "v2"  # which version the target runs; set from --version in main (src/agent/versions.py)
+WITHOUT: list[str] = []  # settings switched off for an ablation; set from --without in main
 
 
 # --- the target: what LangSmith runs on each example ---------------------------------------------------
@@ -53,10 +51,8 @@ def target(inputs: dict) -> dict:
         request = AgentRequest(order_id=inputs["order"]["order_id"], message=inputs["message"],
                                today=date.fromisoformat(inputs["today"]),
                                now=datetime.fromisoformat(now) if now else None)
-        result = run_agent(request, order_db=OrderDatabase(db_path), retrieval=RETRIEVAL,
-                            authoritative_only=AUTHORITATIVE_ONLY, scope_to_order=SCOPE_TO_ORDER,
-                            grounding_rule=GROUNDING_RULE, amount_guard=AMOUNT_GUARD,
-                            escalation_check=ESCALATION_CHECK)
+        result = run_agent(request, order_db=OrderDatabase(db_path), version=VERSION,
+                           **{name: V1[name] for name in WITHOUT})
     return {"decision": result.decision, "refund": result.refund_amount, "deadline": result.return_deadline,
             "actions": [a.type for a in result.actions],
             "retrieved_doc_ids": list(dict.fromkeys(c.doc_id for c in result.retrieved)),  # in rank order, no repeats
@@ -164,19 +160,12 @@ def main() -> None:
                         help="which cases to run (default: all). quick is a fixed 30 of the dev cases for fast "
                              "iteration (D-063); use dev or quick while improving the agent and keep holdout "
                              "for the final comparison (D-060)")
-    parser.add_argument("--retrieval", choices=["v1", "core", "core_order"], default="v1",
-                        help="retrieval mode: v1 (default, search only), core, or core_order (D-067)")
-    parser.add_argument("--authoritative-only", action="store_true",
-                        help="leave stale and non-authoritative documents out of the search (D-071)")
-    parser.add_argument("--scope-to-order", action="store_true",
-                        help="search only the order's own category document and state addendum (D-072)")
-    parser.add_argument("--grounding-rule", action="store_true",
-                        help="add the grounding rule to the agent's system prompt (D-072)")
-    parser.add_argument("--amount-guard", action="store_true",
-                        help="replace an approved refund that is not a calculator result with the last calculator "
-                             "total (D-074)")
-    parser.add_argument("--escalation-check", action="store_true",
-                        help="add a separate model call that checks whether any escalation rule applies (D-080)")
+    parser.add_argument("--cases", nargs="+", metavar="CASE_ID",
+                        help="run only these cases, for example B1 B2 (on top of --split)")
+    parser.add_argument("--version", choices=sorted(VERSIONS), default="v2",
+                        help="v2 (the default) or v1, the original agent, which reproduces the baseline (D-091)")
+    parser.add_argument("--without", nargs="+", choices=sorted(V1), default=[], metavar="SETTING",
+                        help="switch single v2 settings off, for an ablation: " + ", ".join(sorted(V1)))
     parser.add_argument("--trace-evaluators", action="store_true",
                         help="also send each evaluator's own trace to LangSmith (about ten extra traces per run, which "
                              "counts against the monthly trace limit; off by default, D-068)")
@@ -184,13 +173,9 @@ def main() -> None:
                         help="run every case this many times inside the one experiment (default: 1); the agent "
                              "varies between runs, so a baseline uses 3")
     args = parser.parse_args()
-    global RETRIEVAL, AUTHORITATIVE_ONLY, SCOPE_TO_ORDER, GROUNDING_RULE, AMOUNT_GUARD, ESCALATION_CHECK
-    RETRIEVAL = args.retrieval
-    AUTHORITATIVE_ONLY = args.authoritative_only
-    SCOPE_TO_ORDER = args.scope_to_order
-    GROUNDING_RULE = args.grounding_rule
-    AMOUNT_GUARD = args.amount_guard
-    ESCALATION_CHECK = args.escalation_check
+    global VERSION, WITHOUT
+    VERSION, WITHOUT = args.version, args.without
+    options = options_for(args.version, **{name: V1[name] for name in args.without})
 
     # LangSmith always adds a random suffix to a name prefix, so create the experiment here and pass it in:
     # its name is then used exactly as given.
@@ -199,19 +184,24 @@ def main() -> None:
         name = f"{args.label}-{name}"
     if args.split != "all":
         name = f"{name} ({args.split})"
+    if args.cases:
+        name = f"{name} [{' '.join(args.cases)}]"
     client = Client()
     experiment = client.create_project(
         name, reference_dataset_id=client.read_dataset(dataset_name=DATASET_NAME).id,
-        metadata={"label": args.label, "split": args.split, "repetitions": args.repeat,
-                  "retrieval": args.retrieval, "authoritative_only": args.authoritative_only,
-                  "scope_to_order": args.scope_to_order, "grounding_rule": args.grounding_rule,
-                  "amount_guard": args.amount_guard, "escalation_check": args.escalation_check, "agent_model": os.environ["OPENAI_MODEL"],
+        metadata={"label": args.label, "split": args.split, "repetitions": args.repeat, "version": args.version,
+                  "without": args.without, **options, "agent_model": os.environ["OPENAI_MODEL"],
                   "judge_model": os.environ.get("JUDGE_MODEL", os.environ["OPENAI_MODEL"]),
                   "escalation_check_model": (os.environ.get("OPENAI_ESCALATION_CHECK_MODEL") or os.environ["OPENAI_MODEL"])
-                  if args.escalation_check else None})
+                  if options["escalation_check"] else None})
 
     selector = {"all": None, "quick": {"quick": "yes"}}.get(args.split, {"split": args.split})
     examples = client.list_examples(dataset_name=DATASET_NAME, metadata=selector)
+    if args.cases:
+        examples = [e for e in examples if e.metadata["case_id"] in args.cases]
+        missing = set(args.cases) - {e.metadata["case_id"] for e in examples}
+        if missing:
+            raise SystemExit(f"no such case(s) in this split: {sorted(missing)}")
     evaluate(
         target,
         data=list(examples),

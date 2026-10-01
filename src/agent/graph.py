@@ -17,6 +17,7 @@ from src.agent.nodes import (
     record_escalation, retrieve_policy,
 )
 from src.agent.state import AgentResult, AgentState
+from src.agent.versions import options_for
 from src.tools.calculators import CALCULATOR_TOOLS
 from src.data.models import AgentRequest
 from src.data.order_database import OrderDatabase
@@ -76,31 +77,22 @@ def build_graph() -> CompiledStateGraph:
     return g.compile()
 
 
-def run_agent(request: AgentRequest, order_db: OrderDatabase | None = None, retrieval: str = "v1",
-              authoritative_only: bool = False, scope_to_order: bool = False, grounding_rule: bool = False,
-              amount_guard: bool = False, escalation_check: bool = False) -> AgentResult:
+def run_agent(request: AgentRequest, order_db: OrderDatabase | None = None, version: str = "v2",
+              **overrides) -> AgentResult:
     """Run the agent once and return its result: the decision plus the actions the record nodes added.
-    `retrieval` picks the retrieval mode (v1, core, or core_order; see src/rag/forced_docs.py); v1 is the default.
-    `authoritative_only` leaves stale and non-authoritative documents out of the search (D-071); off by default.
-    `scope_to_order` limits category documents and state addenda in the search to the order's own (D-072); off by default.
-    `grounding_rule` adds the grounding rule to the system prompt (D-072); off by default.
-    `amount_guard` replaces an approved refund that is not a calculator result with the last calculator total (D-074);
-    off by default.
-    `escalation_check` adds a separate model call that checks whether any escalation rule applies (D-080); off by
-    default."""
+
+    `version` picks the settings: "v2" (the default) or "v1", the original behavior (see src/agent/versions.py for
+    what each setting does). Any single setting can be overridden by name, for example
+    `run_agent(request, escalation_check=False)`."""
+    options = options_for(version, **overrides)
     out = build_graph().invoke(
         {"request": request},
         config={
-            "configurable": {"order_db": order_db or OrderDatabase(), "retrieval": retrieval,
-                             "authoritative_only": authoritative_only, "scope_to_order": scope_to_order,
-                             "grounding_rule": grounding_rule, "amount_guard": amount_guard,
-                             "escalation_check": escalation_check},
+            "configurable": {"order_db": order_db or OrderDatabase(), **options},
             "recursion_limit": MAX_STEPS,
             "run_name": "refund_agent",
-            "metadata": {"order_id": request.order_id, "today": request.today.isoformat(), "retrieval": retrieval,
-                         "authoritative_only": authoritative_only, "scope_to_order": scope_to_order,
-                         "grounding_rule": grounding_rule, "amount_guard": amount_guard,
-                         "escalation_check": escalation_check},
+            "metadata": {"order_id": request.order_id, "today": request.today.isoformat(), "version": version,
+                         **options},
         },
     )
     return AgentResult(**out["decision"].model_dump(), actions=out.get("actions", []), retrieved=out.get("chunks", []),
