@@ -100,10 +100,10 @@
     "season": "normal",
     "split": "dev",
     "quick": true,
-    "notes": "State rule: California restocking fee is 10%, not the usual 15%. 200.00 + 17.00 - 20.00 - 7.95 = 189.05. Delivered Sep 15, so day 14 of a 30-day window.",
+    "notes": "State rule: California restocking fee is 10%, not the usual 15%. 200.00 + 17.00 - 20.00 - 7.95 = 189.05. Delivered Sep 15, so day 14 of a 30-day window. Message corrected on 2026-10-01: it originally said the customer had used the headphones (\"I opened the headphones and used them for a couple of days, but the sound isn't what I wanted. I'd like to return them, please.\"), which POL-03 makes ineligible and contradicts the key's 'opened electronics' row; 'opened' is not 'used'. Results of earlier experiments on this case are not comparable.",
     "inputs": {
       "today": "2026-09-29",
-      "message": "I opened the headphones and used them for a couple of days, but the sound isn't what I wanted. I'd like to return them, please.",
+      "message": "I opened the box and took the headphones out, but I haven't used them and I've changed my mind. I'd like to return them, please.",
       "customer": {
         "customer_id": "E-B1",
         "first_name": "Priya",
@@ -876,10 +876,10 @@
     "season": "normal",
     "split": "dev",
     "quick": true,
-    "notes": "Opened electronics shipped to Texas: 15% restocking (30.00) plus the 7.95 label fee.",
+    "notes": "Opened electronics shipped to Texas: 15% restocking (30.00) plus the 7.95 label fee. Message corrected on 2026-10-01: it originally said the customer had used the headphones (\"I opened the headphones and tried them for a day, but I've changed my mind. Can I return them for a refund?\"), which POL-03 makes ineligible and contradicts the key's 'opened electronics' row; 'opened' is not 'used'. Results of earlier experiments on this case are not comparable.",
     "inputs": {
       "today": "2026-09-29",
-      "message": "I opened the headphones and tried them for a day, but I've changed my mind. Can I return them for a refund?",
+      "message": "I opened the headphones' box but never actually used them, and I've changed my mind. Can I return them for a refund?",
       "customer": {
         "customer_id": "E-B2",
         "first_name": "Skyler",

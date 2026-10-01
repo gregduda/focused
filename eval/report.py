@@ -2,8 +2,10 @@
 
 Reads the scores that eval/run_eval.py stored in LangSmith and the slice tags on each case. A run passes a check
 when its score is 1 (gold_doc_recall passes only when every gold doc was retrieved). A check with no score for a
-case (no expected deadline, no gold docs) is left out of that case's rate. With repeated runs, every run counts,
-so a rate is the share of runs that passed.
+case (no expected deadline, no gold docs) is left out of that case's rate. A run that crashed counts as a failure on
+the checks that need an answer (decision, refund, escalation, stale doc, and deadline or gold-doc recall when the
+case has one) and is not scored on the reply checks (PII, disclosure, tone, accusation), since it has no reply. Each
+table has a crashes column. With repeated runs, every run counts, so a rate is the share of runs that passed.
 
 By default only the development cases are shown, so the held-out cases (D-060) are not read while the agent is
 being improved. Use --split all or --split holdout for the final comparison.
@@ -47,14 +49,29 @@ def find_experiment(client: Client, name: str | None):
         name, "\n  ".join(sorted(p.name for p in experiments))))
 
 
+def crash_scores(expected: dict) -> dict:
+    """The scores of a run that crashed: it failed every check that needs an answer. The reply checks are left out."""
+    scores = {"_crashed": 1, "decision_correct": 0, "refund_correct": 0, "escalation_correct": 0, "stale_doc_avoided": 0}
+    if expected.get("deadline"):
+        scores["deadline_correct"] = 0
+    if expected.get("gold_docs"):
+        scores["gold_doc_recall"] = 0
+    return scores
+
+
 def load_runs(client: Client, experiment) -> list[tuple[dict, dict]]:
     """One (example metadata, {check: score}) pair per run in the experiment."""
     examples = {e.id: e for e in client.list_examples(dataset_name=DATASET_NAME)}
     pairs = []
     for run in client.list_runs(project_id=experiment.id, is_root=True):
         example = examples.get(run.reference_example_id)
-        if example is not None:
-            pairs.append((example.metadata, {k: v["avg"] for k, v in (run.feedback_stats or {}).items()}))
+        if example is None:
+            continue
+        if run.error is not None:
+            scores = crash_scores(example.outputs)
+        else:
+            scores = {k: v["avg"] for k, v in (run.feedback_stats or {}).items()}
+        pairs.append((example.metadata, scores))
     return pairs
 
 
@@ -64,11 +81,12 @@ def rate(pairs: list[tuple[dict, dict]], key: str) -> str:
 
 
 def print_table(title: str, groups: dict[str, list[tuple[dict, dict]]]) -> None:
-    header = [title, "cases", "runs", *(heading for _, heading in CHECKS)]
+    header = [title, "cases", "runs", "crashes", *(heading for _, heading in CHECKS)]
     body = []
     for group, pairs in sorted(groups.items()):
         cases = len({m["case_id"] for m, _ in pairs})
-        body.append([group + (" *" if cases < MIN_CASES else ""), str(cases), str(len(pairs)),
+        crashes = sum(1 for _, scores in pairs if scores.get("_crashed"))
+        body.append([group + (" *" if cases < MIN_CASES else ""), str(cases), str(len(pairs)), str(crashes),
                      *(rate(pairs, key) for key, _ in CHECKS)])
     widths = [max(len(line[i]) for line in [header, *body]) for i in range(len(header))]
     print()
@@ -101,7 +119,10 @@ def main() -> None:
     experiment = find_experiment(client, args.experiment)
     pairs = [p for p in load_runs(client, experiment) if args.split == "all" or p[0]["split"] == args.split]
     cases = len({m["case_id"] for m, _ in pairs})
+    crashed = sum(1 for _, scores in pairs if scores.get("_crashed"))
     print(f"Experiment {experiment.name!r}, {args.split} cases: {len(pairs)} runs over {cases} cases")
+    if crashed:
+        print(f"{crashed} run(s) crashed: counted as failures on the answer checks, not scored on the reply checks")
 
     print_table("overall", {"all": pairs})
     for slice_key in SLICES:

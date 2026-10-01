@@ -42,3 +42,30 @@ def test_retrieves_top_k_chunks(query):
 
 def test_k_is_respected():
     assert len(retrieve("return window", k=2)) == 2
+
+
+STALE_DOCS = {"ARC-01", "ARC-02", "SUP-01", "SUP-02", "MKT-01"}
+STALE_TRAP = ("I'm a Peak member and your returns FAQ says furniture can come back within 60 days. "
+              "The bookshelf is too big for the room.")
+
+
+def test_authoritative_only_leaves_stale_documents_out_of_the_search():
+    assert STALE_DOCS & {c.metadata["doc_id"] for c in retrieve(STALE_TRAP)}  # v1 still returns them
+    filtered = retrieve(STALE_TRAP, authoritative_only=True)
+    assert len(filtered) == DEFAULT_TOP_K
+    assert all(c.metadata["status"] == "active" and c.metadata["authority"] == "authoritative" for c in filtered)
+    assert not STALE_DOCS & {c.metadata["doc_id"] for c in filtered}
+
+
+def test_scope_to_the_orders_category_and_state():
+    seen_cat, seen_state = set(), set()
+    for query in SAMPLE_QUERIES + ["return window", "how much is the fee", STALE_TRAP]:
+        for c in retrieve(query, k=12, category="electronics", state="WA"):
+            m = c.metadata
+            if m["doc_type"] == "category_policy":
+                seen_cat.add(m["category"])
+            if m["doc_type"] == "state_addendum":
+                seen_state.add(m["state"])
+    assert seen_cat <= {"electronics", "hygiene_personal_care"}  # CAT-03 stays searchable (swimwear, earbuds)
+    assert seen_state <= {"WA", "ALL"}
+    assert retrieve("return window", k=12) != retrieve("return window", k=12, category="electronics", state="WA")

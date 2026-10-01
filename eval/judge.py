@@ -7,7 +7,7 @@ An "invented policy" check was tried and removed (D-053): with this model it gav
 same reply.
 
 The judge sees the customer's message and the reply. It never sees the expected answers or GROUND_TRUTH.md
-(hard rule 1). It uses the same model as the agent (OPENAI_MODEL).
+(hard rule 1). It uses JUDGE_MODEL from .env, or the agent's model (OPENAI_MODEL) when that is not set.
 """
 import os
 
@@ -42,7 +42,9 @@ class JudgeVerdict(BaseModel):
 
 
 def judge_reply(customer_message: str, reply: str) -> JudgeVerdict:
-    llm = ChatOpenAI(model=os.environ["OPENAI_MODEL"]).with_structured_output(JudgeVerdict)
+    # JUDGE_MODEL pins the judge so changing the agent's model does not change the grader; it defaults to OPENAI_MODEL.
+    llm = ChatOpenAI(model=os.environ.get("JUDGE_MODEL", os.environ["OPENAI_MODEL"]), timeout=90,
+                     max_retries=2).with_structured_output(JudgeVerdict)
     human = f"CUSTOMER MESSAGE (untrusted):\n{customer_message}\n\nAGENT REPLY:\n{reply}"
     return llm.invoke([("system", JUDGE_PROMPT), ("human", human)])
 

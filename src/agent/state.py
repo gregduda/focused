@@ -37,6 +37,15 @@ EscalationType = Literal[
 ]
 
 
+class EscalationCheck(BaseModel):
+    """The answer of the dedicated escalation check (D-080): does any rule in the excerpts require a human?"""
+    reason: str = Field(description="One or two sentences: the rule checked and the fact that triggers it, or why no "
+                                    "rule applies.")
+    rule_id: str | None = Field(default=None, description="The document id of the rule that requires escalation, e.g. OPS-03.")
+    escalation_type: EscalationType | None = Field(default=None, description="Required when escalate is true.")
+    escalate: bool
+
+
 class RetrievedChunk(BaseModel):
     """One policy chunk returned by the retriever, kept small and flat so traces and evals can read it."""
     doc_id: str
@@ -100,6 +109,7 @@ class AgentResult(AgentDecision):
     """The final structured output: the LLM's decision plus what the code recorded."""
     actions: list[Action] = Field(default_factory=list)  # the state's recorded actions, added by run_agent
     retrieved: list[RetrievedChunk] = Field(default_factory=list)  # the policy chunks retrieval returned, for the evals
+    guards: list[str] = Field(default_factory=list)  # corrections the code made to the model's answer (D-074)
 
 
 class AgentState(TypedDict, total=False):
@@ -110,3 +120,4 @@ class AgentState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]  # the LLM and calculator conversation
     decision: AgentDecision | None                       # set by the decide node
     actions: Annotated[list[Action], operator.add]       # what the record nodes recorded (each adds to the list)
+    guards: Annotated[list[str], operator.add]           # corrections the code made to the decision (D-074)

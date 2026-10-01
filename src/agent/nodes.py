@@ -10,6 +10,7 @@ The run goes through these nodes (wiring is in graph.py):
 The "tools" node is not defined here: it is LangGraph's built-in ToolNode, which runs the calculators the agent
 asked for. Nodes that need the order database get it from the graph config (see graph.run_agent).
 """
+import json
 import os
 from decimal import Decimal, InvalidOperation
 
@@ -17,11 +18,14 @@ from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_openai import ChatOpenAI
 
-from src.agent.prompts import DECIDE_INSTRUCTION, build_prefix
-from src.agent.state import AgentDecision, AgentState, RetrievedChunk
+from src.agent.prompts import (
+    DECIDE_INSTRUCTION, build_escalation_check_input, build_prefix, escalation_finding_message,
+)
+from src.agent.state import AgentDecision, AgentState, EscalationCheck, RetrievedChunk
 from src.data.models import Action
 from src.data.order_database import OrderDatabase
-from src.rag.chunk_retriever import retrieve
+from src.rag.chunk_retriever import docs_by_id, retrieve
+from src.rag.forced_docs import forced_doc_ids
 from src.tools.calculators import CALCULATOR_TOOLS
 
 NOT_FOUND_MESSAGE = (
@@ -30,9 +34,12 @@ NOT_FOUND_MESSAGE = (
 )
 
 
-def _llm() -> ChatOpenAI:
-    """A chat model client. The model name comes from OPENAI_MODEL in .env, never hard-coded."""
-    return ChatOpenAI(model=os.environ["OPENAI_MODEL"])
+def _llm(model: str | None = None) -> ChatOpenAI:
+    """A chat model client. The model name comes from OPENAI_MODEL in .env, never hard-coded, unless a call asks for
+    another one (the escalation check can, see OPENAI_ESCALATION_CHECK_MODEL)."""
+    # A call that has not answered in 90 seconds is retried (twice) instead of waiting out the client's 10-minute
+    # default: a dead connection once froze an experiment for an hour (D-081).
+    return ChatOpenAI(model=model or os.environ["OPENAI_MODEL"], timeout=90, max_retries=2)
 
 
 def _order_db(config: RunnableConfig) -> OrderDatabase:
@@ -80,22 +87,31 @@ def order_not_found(state: AgentState) -> dict:
     return {"decision": decision, "actions": [action]}
 
 
-def retrieve_policy(state: AgentState) -> dict:
+def retrieve_policy(state: AgentState, config: RunnableConfig) -> dict:
     """Node 2. Fetch the policy chunks the agent will reason from (the RAG step).
 
-    Reads:  state["request"].message
-    Writes: "chunks", the top-k retrieved policy chunks, best match first. Each keeps its doc id, section,
-            status, authority, and distance so traces and evals can inspect them.
+    Reads:  state["request"].message, and for the experimental modes the order and customer.
+    Writes: "chunks": the top-k search results, best match first, then (modes core and core_order only) every chunk of
+            the documents added by rule (forced_docs.py), skipping chunks the search already returned. Each keeps its
+            doc id, section, status, authority, and distance so traces and evals can inspect them.
     Next:   agent.
     The model never sees status or authority (see prompts.py). No LLM involved. The search itself is traced
     as its own step in LangSmith (the decorator is on retrieve in chunk_retriever.py).
     """
-    # Version 1: the query is the customer's message alone, with no metadata filtering.
-    docs = retrieve(state["request"].message)
+    # The default, version 1: the query is the customer's message alone, with no metadata filtering.
+    opts = config["configurable"]
+    scope = {"category": state["order"].items[0].category, "state": state["order"].ship_to_state} \
+        if opts.get("scope_to_order") else {}
+    docs = retrieve(state["request"].message, authoritative_only=opts.get("authoritative_only", False), **scope)
+    mode = config["configurable"].get("retrieval", "v1")
+    forced = forced_doc_ids(mode, state["order"], state["customer"])
+    if forced:
+        seen = {(d.metadata["doc_id"], d.metadata["section"]) for d in docs}
+        docs += [d for d in docs_by_id(forced) if (d.metadata["doc_id"], d.metadata["section"]) not in seen]
     return {"chunks": [RetrievedChunk.from_document(d) for d in docs]}
 
 
-def agent(state: AgentState) -> dict:
+def agent(state: AgentState, config: RunnableConfig) -> dict:
     """Node 3. The reasoning step: the LLM reads everything and gathers facts with the calculators.
 
     Reads:  the request, order, customer, and chunks (turned into the prompt by build_prefix), plus
@@ -107,11 +123,31 @@ def agent(state: AgentState) -> dict:
     The prompt is rebuilt from the state on every call; only the model and tool messages are kept in
     state["messages"].
     """
-    messages = build_prefix(state) + state.get("messages", [])
+    messages = build_prefix(state, config["configurable"].get("grounding_rule", False)) + state.get("messages", [])
     return {"messages": [_llm().bind_tools(CALCULATOR_TOOLS).invoke(messages)]}
 
 
-def decide(state: AgentState) -> dict:
+def escalation_check(state: AgentState, config: RunnableConfig) -> dict:
+    """Node 3b (optional, D-080). A separate, narrow model call that asks only: does any escalation rule in the excerpts
+    apply to this case? Off by default, when this node does nothing.
+
+    Reads:  the request, order, customer, chunks, and the calculator results in "messages".
+    Writes: when a rule applies, one message that tells the decision step to record ESCALATE (and a note in "guards");
+            otherwise nothing.
+    Next:   decide.
+    """
+    if not config["configurable"].get("escalation_check", False):
+        return {}
+    # OPENAI_ESCALATION_CHECK_MODEL lets a stronger model do this one narrow call while the agent runs on a cheaper one (D-089).
+    check_model = os.environ.get("OPENAI_ESCALATION_CHECK_MODEL") or None
+    check = _llm(check_model).with_structured_output(EscalationCheck).invoke(build_escalation_check_input(state))
+    if not check.escalate:
+        return {"guards": ["escalation check: no rule applies"]}
+    return {"messages": [HumanMessage(escalation_finding_message(check.rule_id, check.escalation_type, check.reason))],
+            "guards": [f"escalation check: {check.rule_id} applies: {check.reason}"]}
+
+
+def decide(state: AgentState, config: RunnableConfig) -> dict:
     """Node 4. Turn the agent's analysis into the formal, structured decision.
 
     Makes a second LLM call, constrained to the AgentDecision schema, so the output is always valid: the label
@@ -122,8 +158,44 @@ def decide(state: AgentState) -> dict:
     Writes: "decision".
     Next:   record_approval, record_escalation, or record_denial, depending on the label (route_decision in graph.py).
     """
-    messages = build_prefix(state) + state["messages"] + [HumanMessage(DECIDE_INSTRUCTION)]
-    return {"decision": _llm().with_structured_output(AgentDecision).invoke(messages)}
+    messages = build_prefix(state, config["configurable"].get("grounding_rule", False)) + state["messages"] \
+        + [HumanMessage(DECIDE_INSTRUCTION)]
+    decision = _llm().with_structured_output(AgentDecision).invoke(messages)
+    notes = []
+    if decision.decision != "ESCALATE" and any(isinstance(g, str) and g.startswith("escalation check: ") and "no rule applies" not in g
+                                              for g in state.get("guards", [])):
+        notes.append("the decision ignored the escalation check")
+    if not config["configurable"].get("amount_guard", False):
+        return {"decision": decision, "guards": notes}
+    decision, note = correct_refund(decision, state["messages"])
+    return {"decision": decision, "guards": notes + ([note] if note else [])}
+
+
+def correct_refund(decision: AgentDecision, messages: list) -> tuple[AgentDecision, str | None]:
+    """The amount guard (D-074, D-080): a refund amount belongs only to an approval, and must be a figure the refund
+    calculator produced.
+
+    On a DENY or ESCALATE the amount is cleared (no money moves, and an amount left in the field contradicts the
+    decision). On an APPROVE, if the model's refund_amount is not the total of any compute_refund result in this run,
+    it was copied wrongly or made up, so it is replaced with the total of the last compute_refund call. Each
+    correction is returned as a note. Left alone: an empty amount, an APPROVE in a run with no compute_refund call,
+    and an amount that equals some calculator total (the model may legitimately settle on an earlier scenario)."""
+    totals = []
+    for m in messages:
+        if getattr(m, "name", None) == "compute_refund" and getattr(m, "status", "success") != "error":
+            try:
+                totals.append(Decimal(json.loads(m.content)["total_to_customer"]))
+            except (ValueError, KeyError, TypeError, InvalidOperation):
+                continue  # an unreadable result is not a figure to trust
+    stated = _amount(decision.refund_amount)
+    if stated is not None and decision.decision != "APPROVE":
+        return (decision.model_copy(update={"refund_amount": None}),
+                f"refund {stated} cleared: a {decision.decision} carries no refund")
+    if decision.decision != "APPROVE" or stated is None or not totals or stated in totals:
+        return decision, None
+    fixed = totals[-1]
+    note = f"refund {stated} was not a calculator result; replaced with the last compute_refund total {fixed}"
+    return decision.model_copy(update={"refund_amount": str(fixed)}), note
 
 
 def record_approval(state: AgentState) -> dict:
