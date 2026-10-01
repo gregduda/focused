@@ -116,6 +116,7 @@ def test_unknown_order_escalates_without_calling_the_llm():
     result = run_agent(AgentRequest(order_id="NOPE-1", message="Refund me please", today=TODAY))
     assert result.decision == "ESCALATE" and result.escalation_type == "order_not_found"
     assert [a.type for a in result.actions] == ["open_escalation"]
+    assert result.retrieved == []  # the run stops before retrieval
     assert "order" in result.customer_message.lower()
 
 
@@ -126,6 +127,7 @@ def test_end_to_end_return_request():
     result = run_agent(request)
     print("\n", result.model_dump_json(indent=2))
     assert result.decision in {"APPROVE", "DENY", "ESCALATE"} and result.customer_message
+    assert result.retrieved  # retrieval ran and its chunks are on the result
     assert len(result.actions) <= 1  # one recorded entry per run (none only for an APPROVE with no approved_action)
     if result.decision == "DENY":
         assert [a.type for a in result.actions] == ["record_denial"]

@@ -77,4 +77,4 @@ def run_agent(request: AgentRequest, order_db: OrderDatabase | None = None) -> A
             "metadata": {"order_id": request.order_id, "today": request.today.isoformat()},
         },
     )
-    return AgentResult(**out["decision"].model_dump(), actions=out.get("actions", []))
+    return AgentResult(**out["decision"].model_dump(), actions=out.get("actions", []), retrieved=out.get("chunks", []))

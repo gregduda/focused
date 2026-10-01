@@ -1,1 +1,2 @@
 - Track returns by a given customer in case we have a "chronic returner" who abuses the system
+- Different model for evaluator vs agent (both currently use gpt-5.4-nano)

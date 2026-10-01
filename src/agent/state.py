@@ -99,6 +99,7 @@ class AgentDecision(BaseModel):
 class AgentResult(AgentDecision):
     """The final structured output: the LLM's decision plus what the code recorded."""
     actions: list[Action] = Field(default_factory=list)  # the state's recorded actions, added by run_agent
+    retrieved: list[RetrievedChunk] = Field(default_factory=list)  # the policy chunks retrieval returned, for the evals
 
 
 class AgentState(TypedDict, total=False):
