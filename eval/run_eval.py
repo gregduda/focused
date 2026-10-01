@@ -7,6 +7,7 @@ From the repo root:
     python -m eval.run_eval                  # experiment named by the time, e.g. 2026/09/30 19:20:24
     python -m eval.run_eval --label v2       # v2-2026/09/30 19:20:24, for example after improving the agent
     python -m eval.run_eval --split dev      # only the development cases (see D-060); also: holdout, all
+    python -m eval.run_eval --label baseline --repeat 3    # every case three times in one experiment
 """
 import argparse
 import re
@@ -145,6 +146,9 @@ def main() -> None:
     parser.add_argument("--split", choices=["all", "dev", "holdout"], default="all",
                         help="which cases to run (default: all). Use dev while improving the agent and keep holdout "
                              "for the final comparison (D-060)")
+    parser.add_argument("--repeat", type=int, default=1,
+                        help="run every case this many times inside the one experiment (default: 1); the agent "
+                             "varies between runs, so a baseline uses 3")
     args = parser.parse_args()
 
     # LangSmith always adds a random suffix to a name prefix, so create the experiment here and pass it in:
@@ -155,7 +159,9 @@ def main() -> None:
     if args.split != "all":
         name = f"{name} ({args.split})"
     client = Client()
-    experiment = client.create_project(name, reference_dataset_id=client.read_dataset(dataset_name=DATASET_NAME).id)
+    experiment = client.create_project(
+        name, reference_dataset_id=client.read_dataset(dataset_name=DATASET_NAME).id,
+        metadata={"label": args.label, "split": args.split, "repetitions": args.repeat})
 
     examples = client.list_examples(dataset_name=DATASET_NAME,
                                     metadata=None if args.split == "all" else {"split": args.split})
@@ -165,6 +171,7 @@ def main() -> None:
         evaluators=EVALUATORS,
         experiment=experiment,
         client=client,
+        num_repetitions=args.repeat,
         max_concurrency=0,  # one case at a time
     )
     print(f"Done. The scores and traces are in the LangSmith experiment {name!r}.")
