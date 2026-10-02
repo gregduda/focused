@@ -177,3 +177,15 @@ Share of runs that passed each check. Every case was run 3 times (58 cases, 174 
 - v1 ran on `gpt-5.4-nano`. v2 runs on `gpt-5.4-mini`, with a stronger model (`gpt-6.1-sol`) doing the escalation check, so this compares the model change and the agent changes together.
 
 Full traces can be viewed in Langsmith [here](https://smith.langchain.com/public/21cbf6c2-9201-476f-8bd8-b91007aa9f3a/d). The two rows relevant for comparison is row #10 (baseline-2026/09/30 20:20:34), which is v1; and row #25 (v2_full-2026/10/01 17:30:59), which is v2 of the agent after improvements were made.
+
+For a full breakdown of various slices, run the following command:
+
+V1:
+```
+python -m eval.report --experiment "baseline-2026/09/30 20:20:34"
+```
+
+V2:
+```
+python -m eval.report --experiment "v2_full-2026/10/01 17:30:59"
+```
