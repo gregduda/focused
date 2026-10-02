@@ -2,12 +2,13 @@
 
 ## The problem
 
-Juniper & Pine is a made-up online store. Customers write in to return something or ask for a refund, and this agent handles the request. For each returns request it:
+Juniper & Pine is a made-up online store. Customers write in to return something or ask for a refund, and this agent handles the request. For each return request the agent:
 
 - looks up the order,
 - reads the store's return policies,
+- works out the return deadline,
+- calculates refund amount
 - decides **APPROVE**, **DENY**, or **ESCALATE** (hand it to a human),
-- works out the refund and return deadline,
 - writes a reply to the customer.
 
 To make this a more challenging scenario, there are extra rules that need to be considered before deterimining if a return is approved, and how much will be refunded. These caveats include:
