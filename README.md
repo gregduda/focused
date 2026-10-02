@@ -176,7 +176,34 @@ Share of runs that passed each check. Every case was run 3 times (58 cases, 174 
 
 - v1 ran on `gpt-5.4-nano`. v2 runs on `gpt-5.4-mini`, with a stronger model (`gpt-6.1-sol`) doing the escalation check, so this compares the model change and the agent changes together.
 
-Full traces can be viewed in Langsmith [here](https://smith.langchain.com/public/21cbf6c2-9201-476f-8bd8-b91007aa9f3a/d). The two rows relevant for comparison is row #10 (baseline-2026/09/30 20:20:34), which is v1; and row #25 (v2_full-2026/10/01 17:30:59), which is v2 of the agent after improvements were made.
+## Improvements made for v2
+
+There were two main improvements made to v2 that dramatically increased the agent's success rate:
+
+### Adding metadata to the user's question
+
+v1 solely passed the customer's question to the agent, so the RAG step frequently missed key documents. This was because unless the customer happened to mention something like the state they were in or that they bought it right before Christmas, relevant documents to those situations were matched.
+
+In v2, metadata from the order was added to the input for the RAG:
+- ship-to-state
+- order date
+- item category
+- loyalty tier
+- item tags (e.g. doorbuster or clearance)
+
+ This led to the 'gold_doc_recall' success rate going from 14% to 83%. This also meant outdated documents were no longer being pulled, so 'stale_doc_avoided' rose from 33% to 100%.
+ 
+ As a consequence of the correct gold docs being extraced during the RAG step, this meant all of the relevant policies were being considered when the agent was making decisions and calculating refunds. Thus, 'decision_correct' and 'refund_correct' both had big jumps in accuracy.
+
+### Adding a separate escalation check
+
+One important issue that v1 had was that some cases that should have been escalated for human intervention were not. This was in spite of the correct gold docs. So the model was failing to realize escalation was necessary even though the necessary information was there. It turned out that the existing model (gpt-5.4-nano) was too small for the correct reasoning. Bumping the model up to gpt-6.1-sol solved this issue, but didn't improve the scores of any of the other metris. And using this model for all calls would lead to much higher costs and increased latency.
+
+To solve this, a hybrid approach was adopted. The smaller model would be used for most agent calls, then the bigger model was used for a single call to evaluate whether escalation was necessary. This led to an increase in correct escalations from 77% to 90%.
+
+
+## Traces
+Full traces can be viewed in Langsmith [here](https://smith.langchain.com/public/21cbf6c2-9201-476f-8bd8-b91007aa9f3a/d). The two rows relevant for comparison are row #10 (baseline-2026/09/30 20:20:34), which is v1; and row #25 (v2_full-2026/10/01 17:30:59), which is v2 of the agent after improvements were made.
 
 For a full breakdown of various slices, run the following command:
 
