@@ -81,7 +81,7 @@ stronger model, see below).
 
 ```mermaid
 flowchart TD
-    A["Customer request<br/>order id, message, today's date"] --> B["Look up the order and customer"]
+    A["Customer request<br/>order id, message, date"] --> B["Look up the order<br/>and customer"]
     B -- "order not found" --> X["Escalate to a human"]
     B --> C["Search the policy docs"]
     C --> D["Agent: reads the policies,<br/>calls the calculators"]
